@@ -1,0 +1,15 @@
+{
+  "name": "bull-flag-scalper",
+  "version": "1.0.0",
+  "description": "Real-time 1-min bull flag scanner for NASDAQ low-float stocks",
+  "main": "scanner-server.js",
+  "scripts": {
+    "start": "node scanner-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
