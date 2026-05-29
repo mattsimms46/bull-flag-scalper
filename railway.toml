@@ -1,3 +1,6 @@
 [deploy]
 startCommand = "node scanner-server.js"
 restartPolicyType = "always"
+
+[[services]]
+type = "worker"
