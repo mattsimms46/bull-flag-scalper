@@ -1,4 +1,3 @@
-const http = require('http');
 // ─── Bull Flag Scalper — Real-Time Server ────────────────────────────────────
 // Runs 5am–10am ET daily, streams Polygon WebSocket 1-min bars,
 // detects low-float bull flags with 5x+ relative volume, fires Telegram alerts.
