@@ -1,6 +1,5 @@
 // ─── Bull Flag Scalper — Real-Time Server ────────────────────────────────────
 const https     = require("https");
-const http      = require("http");
 const WebSocket = require("ws");
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -13,15 +12,8 @@ const MIN_RVOL       = parseFloat(process.env.MIN_RVOL    || "5");
 const MAX_FLOAT_M    = parseFloat(process.env.MAX_FLOAT_M || "20");
 const SCAN_START_ET  = parseInt(process.env.SCAN_START_ET || "5");
 const SCAN_END_ET    = parseInt(process.env.SCAN_END_ET   || "10");
-const PORT           = parseInt(process.env.PORT          || "8080");
 
-// ── Health server — starts FIRST so Railway health check passes ───────────────
-http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("OK");
-}).listen(PORT, "0.0.0.0", () => {
-  console.log(`[BOOT] Health server on port ${PORT}`);
-});
+// No HTTP server — pure worker process, Railway won't health check it
 
 // ── Process guards ────────────────────────────────────────────────────────────
 process.on("SIGTERM",            () => log("SIGTERM — ignoring, staying alive"));
