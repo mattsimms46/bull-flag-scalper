@@ -368,18 +368,32 @@ async function checkSchedule() {
 }
 
 // ── Health check server (required by Railway) ─────────────────────────────────
-http.createServer((req, res) => {
+// Must start IMMEDIATELY and respond to all requests with 200
+const PORT = process.env.PORT || 8080;
+const server = http.createServer((req, res) => {
   const now = new Date().toLocaleString("en-US", { timeZone:"America/New_York" });
   res.writeHead(200, { "Content-Type":"application/json" });
   res.end(JSON.stringify({
-    status:    "ok",
-    scanning:  scanActive,
-    tickers:   activeTickers.size,
-    time_et:   now,
+    status:       "ok",
+    scanning:     scanActive,
+    tickers:      activeTickers.size,
+    time_et:      now,
     alerts_today: alertedToday.size,
   }));
-}).listen(process.env.PORT || 3000, () => {
-  log("Health server listening on port " + (process.env.PORT || 3000));
+});
+server.listen(PORT, "0.0.0.0", () => {
+  log(`Health server listening on port ${PORT}`);
+});
+// Keep process alive even if no connections
+server.on("error", err => log(`Health server error: ${err.message}`));
+process.on("SIGTERM", () => {
+  log("SIGTERM received — staying alive (Railway keep-alive)");
+});
+process.on("uncaughtException", err => {
+  log(`Uncaught exception: ${err.message}`);
+});
+process.on("unhandledRejection", (reason) => {
+  log(`Unhandled rejection: ${reason}`);
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────────
