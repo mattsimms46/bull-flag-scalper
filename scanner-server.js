@@ -1,3 +1,4 @@
+const http = require('http');
 // ─── Bull Flag Scalper — Real-Time Server ────────────────────────────────────
 // Runs 5am–10am ET daily, streams Polygon WebSocket 1-min bars,
 // detects low-float bull flags with 5x+ relative volume, fires Telegram alerts.
@@ -43,6 +44,15 @@ let floatData       = {};      // ticker -> shares float
 let alertedToday    = new Set();
 let scanActive      = false;
 let reconnectTimer  = null;
+
+// ── Health server — must start FIRST before anything else ────────────────────
+const PORT = process.env.PORT || 8080;
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("OK");
+}).listen(PORT, "0.0.0.0", () => {
+  console.log(`[BOOT] Health server up on port ${PORT}`);
+});
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 function log(msg) {
@@ -386,8 +396,13 @@ server.listen(PORT, "0.0.0.0", () => {
 });
 // Keep process alive even if no connections
 server.on("error", err => log(`Health server error: ${err.message}`));
+let sigTermCount = 0;
 process.on("SIGTERM", () => {
-  log("SIGTERM received — staying alive (Railway keep-alive)");
+  sigTermCount++;
+  log(`SIGTERM received (${sigTermCount}) — allowing graceful shutdown`);
+  // Exit cleanly so Railway can swap deployments
+  // Restart policy "Always" will bring us back up immediately
+  setTimeout(() => process.exit(0), 2000);
 });
 process.on("uncaughtException", err => {
   log(`Uncaught exception: ${err.message}`);
