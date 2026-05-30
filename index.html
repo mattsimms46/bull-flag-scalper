@@ -1618,10 +1618,13 @@ function setSyncStatus(status) {
 async function pullData() {
   try {
     setSyncStatus("syncing");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(`${API_URL}/data`, {
       headers: { "X-API-Secret": API_SECRET },
-      signal: AbortSignal.timeout(8000),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     alerts         = data.alerts  || [];
@@ -1655,12 +1658,15 @@ async function pushData() {
 
   try {
     const portfolioSize = parseFloat(document.getElementById("portfolio-size")?.value) || 0;
+    const pc = new AbortController();
+    const pt = setTimeout(() => pc.abort(), 8000);
     await fetch(`${API_URL}/data`, {
       method:  "POST",
       headers: { "Content-Type":"application/json", "X-API-Secret": API_SECRET },
       body:    JSON.stringify({ alerts, journal, wheel:wheelPositions, bnh:bnhPositions, portfolio:{ size:portfolioSize } }),
-      signal:  AbortSignal.timeout(8000),
+      signal:  pc.signal,
     });
+    clearTimeout(pt);
     setSyncStatus("ok");
     lastSync = new Date();
   } catch(e) {
