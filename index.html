@@ -1582,6 +1582,8 @@ body {
   </div><!-- /content -->
 </div><!-- /main -->
 
+<div id="toast">📋 Copied to clipboard</div>
+
 <script>
 // ── Config ────────────────────────────────────────────────────────────────────
 const RAILWAY_URL = "https://steep-morning-ce86.mattsimms46.workers.dev";
@@ -1913,6 +1915,14 @@ function buildAlertCard(a) {
         <span style="font-size:10px;color:${a.direction==="bull"?"var(--green2)":"var(--red2)"}">
           ${a.direction==="bull"?"▲ LONG":"▼ SHORT"}
         </span>
+        <button onclick="copyTicker('${a.ticker}', event)" title="Copy ticker" style="
+          background:rgba(255,255,255,0.08);border:1px solid var(--border2);
+          border-radius:4px;color:var(--text2);padding:2px 7px;font-size:10px;
+          cursor:pointer;font-family:var(--font-body);transition:all 0.1s;
+        " onmouseover="this.style.color='var(--green2)';this.style.borderColor='var(--green2)'"
+           onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border2)'">
+          📋
+        </button>
       </div>
       <div class="conviction">${stars}</div>
     </div>
