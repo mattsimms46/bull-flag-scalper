@@ -25,6 +25,27 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+// ── VWAP Calculation ──────────────────────────────────────────────────────────
+function calcVWAP(bars) {
+  // VWAP = sum(typical_price * volume) / sum(volume)
+  let cumTPV = 0, cumVol = 0;
+  for (const b of bars) {
+    const tp = (b.open + b.high + b.low + b.close) / 4;
+    cumTPV += tp * b.vol;
+    cumVol += b.vol;
+  }
+  return cumVol > 0 ? cumTPV / cumVol : null;
+}
+
+function vwapLabel(price, vwap) {
+  if (!vwap) return { label:"VWAP N/A", emoji:"⬜", pct:null };
+  const pct = ((price - vwap) / vwap * 100);
+  if (pct > 3)  return { label:`${pct.toFixed(1)}% above VWAP ⚠️`, emoji:"🔴", pct };
+  if (pct > 0)  return { label:`${pct.toFixed(1)}% above VWAP ✅`, emoji:"🟢", pct };
+  if (pct > -3) return { label:`${pct.toFixed(1)}% below VWAP`,    emoji:"🟡", pct };
+  return              { label:`${pct.toFixed(1)}% below VWAP ⚠️`, emoji:"🔴", pct };
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let ws             = null;
 let activeTickers  = new Set();
@@ -196,6 +217,9 @@ function detectScalpFlag(ticker) {
 // ── Format Alert ──────────────────────────────────────────────────────────────
 function formatAlert(f) {
   const time = new Date().toLocaleTimeString("en-US", { timeZone:"America/New_York", hour:"2-digit", minute:"2-digit" });
+  const vwapLine = f.vwap
+    ? `${f.vwapInfo.emoji} VWAP:   $${f.vwap} (${f.vwapInfo.label})`
+    : "";
   return `🚨 <b>BULL FLAG — ${f.ticker}</b>
 ⏰ ${time} ET
 
@@ -205,6 +229,7 @@ function formatAlert(f) {
 ⚡ Rel Vol: ${f.rVol}x average
 📊 Float:   ${f.float}
 📐 Spread:  ~${f.spreadPct}%
+${vwapLine}
 
 🎯 Target: $${f.breakoutTarget}
 🛑 Stop:   $${f.stopLoss}
@@ -251,8 +276,13 @@ function connectWebSocket(tickers) {
         if (!alertedToday.has(ticker)) {
           const flag = detectScalpFlag(ticker);
           if (flag) {
+            // Add VWAP context
+            const vwap = calcVWAP(bars[ticker]);
+            const vwapInfo = vwapLabel(parseFloat(flag.currentPrice), vwap);
+            flag.vwap = vwap ? vwap.toFixed(2) : null;
+            flag.vwapInfo = vwapInfo;
             alertedToday.add(ticker);
-            log(`🚨 FLAG: ${ticker} @ $${flag.currentPrice} | +${flag.poleGain}% | ${flag.rVol}x rvol`);
+            log(`🚨 FLAG: ${ticker} @ $${flag.currentPrice} | +${flag.poleGain}% | ${flag.rVol}x rvol | VWAP:${vwapInfo.label}`);
             sendTelegram(formatAlert(flag));
             setTimeout(() => alertedToday.delete(ticker), 30*60*1000);
           }
@@ -307,7 +337,103 @@ async function checkSchedule() {
   }
 }
 
-// ── Start ─────────────────────────────────────────────────────────────────────
-log("Bull Flag Scalper starting...");
+// ── Daily Recap ───────────────────────────────────────────────────────────────
+let recapSentToday = false;
+let dailyAlerts = { scalp:[], orb:[], reversal:[] };
+
+function scheduleRecap() {
+  const et      = new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"}));
+  const etMins  = et.getHours()*60 + et.getMinutes();
+  const recapM  = 16*60+30; // 4:30pm ET
+  const isWeekday = et.getDay()>=1 && et.getDay()<=5;
+
+  if (isWeekday && etMins >= recapM && etMins < recapM+2 && !recapSentToday) {
+    recapSentToday = true;
+    sendDailyRecap();
+  }
+  // Reset at midnight
+  if (etMins === 0) {
+    recapSentToday = false;
+    dailyAlerts = { scalp:[], orb:[], reversal:[] };
+  }
+}
+
+function sendDailyRecap() {
+  const today = new Date().toLocaleDateString("en-US",{
+    timeZone:"America/New_York", weekday:"long", month:"short", day:"numeric"
+  });
+
+  const scalpCount    = alertedToday?.size || 0;
+  const now = new Date().toLocaleTimeString("en-US",{timeZone:"America/New_York"});
+
+  const body = `📋 <b>Daily Recap — ${today}</b>
+⏰ ${now} ET
+
+⚡ <b>Bull Flag Scalper</b>
+  Alerts fired: ${scalpCount} setups
+  Window: 5:00–10:00am ET
+
+📐 <b>ORB Scanner</b>
+  Elite/Good breakouts only
+  Window: 9:40–10:15am ET
+
+🔄 <b>Reversal Scanner</b>
+  Marubozu exhaustion setups
+  Window: 9:30–10:30am ET
+
+—
+<i>Review your trades · Adjust criteria in Railway Variables if needed
+Tomorrow's pre-market brief at 9:20am ET</i>`;
+
+  // Use https directly since sendTelegram is defined above
+  const msgBody = JSON.stringify({ chat_id: TELEGRAM_CHAT, text: body, parse_mode:"HTML" });
+  const opts = {
+    hostname:"api.telegram.org",
+    path:`/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method:"POST",
+    headers:{"Content-Type":"application/json","Content-Length":Buffer.byteLength(msgBody)},
+  };
+  const req = https.request(opts, res => {
+    if (res.statusCode!==200) log(`Recap Telegram error: ${res.statusCode}`);
+  });
+  req.on("error", e => log(`Recap error: ${e.message}`));
+  req.write(msgBody); req.end();
+  log("Daily recap sent");
+}
+
+// ── Start API + all scanners ──────────────────────────────────────────────────
+const { checkReversalSchedule } = require("./reversal-scanner");
+const { checkORBSchedule }      = require("./orb-scanner");
+const { writeData, readData }   = require("./api-server");
+
+// Push alert to local data store so dashboard can read it
+function pushAlert(alert) {
+  try {
+    const data = readData();
+    alert.id   = Date.now() + Math.random().toString(36).slice(2,6);
+    alert.time = new Date().toISOString();
+    alert.outcome = null;
+    alert.notes   = "";
+    data.alerts.unshift(alert);
+    if (data.alerts.length > 200) data.alerts = data.alerts.slice(0,200);
+    writeData(data);
+    log(`Alert stored: ${alert.ticker} ${alert.type}`);
+  } catch(e) {
+    log(`Alert store error: ${e.message}`);
+  }
+}
+
+// Make pushAlert available globally for scanners
+global.wickedPushAlert = pushAlert;
+
+log("Bull Flag Pro starting — Scalper + Reversal + ORB + Daily Recap + API");
 checkSchedule();
-setInterval(checkSchedule, 60 * 1000);
+checkReversalSchedule();
+checkORBSchedule();
+scheduleRecap();
+setInterval(() => {
+  checkSchedule();
+  checkReversalSchedule();
+  checkORBSchedule();
+  scheduleRecap();
+}, 60 * 1000);
