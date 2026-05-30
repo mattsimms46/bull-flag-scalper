@@ -1589,15 +1589,13 @@ const API_URL     = "https://bull-flag-scalper-production.up.railway.app";
 const API_SECRET  = "wicked-secret-change-me"; // change this in Railway env vars
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let alerts       = [];
-let journal      = [];
-let wheelPositions = [];
-let bnhPositions   = [];
-let alertFilter  = "all";
-let journalFilter= "all";
-let activeTab    = "alerts";
-let syncing      = false;
-let lastSync     = null;
+let alerts         = [];
+let journal        = [];
+let alertFilter    = "all";
+let journalFilter  = "all";
+let activeTab      = "alerts";
+let syncing        = false;
+let lastSync       = null;
 
 // ── Sync indicator ────────────────────────────────────────────────────────────
 function setSyncStatus(status) {
@@ -2250,8 +2248,8 @@ function renderAnalytics() {
 }
 
 // ── Long Term / Wheel / BnH ──────────────────────────────────────────────────
-let wheelPositions = JSON.parse(localStorage.getItem("wicked_wheel") || "[]");
-let bnhPositions   = JSON.parse(localStorage.getItem("wicked_bnh")   || "[]");
+let wheelPositions = [];
+let bnhPositions   = [];
 
 function saveWheel() { pushData(); }
 function saveBnH()   { pushData(); }
