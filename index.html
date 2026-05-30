@@ -2440,6 +2440,195 @@ function renderBnH() {
   }).join("");
 }
 
+// ── Manual Scan ───────────────────────────────────────────────────────────────
+async function manualScan(type) {
+  const WORKER = "https://steep-morning-ce86.mattsimms46.workers.dev";
+  const btnMap = { scalp:"btn-scalp", orb:"btn-orb", reversal:"btn-rev" };
+  const btn = document.getElementById(btnMap[type]);
+  if (btn.disabled) return;
+
+  // Tickers per scanner type
+  const tickerSets = {
+    scalp: ["SOFI","HOOD","MARA","RIOT","HIMS","RDDT","SNAP","AMC","GME","NIO","ACHR","RKLB","ASTS","CLSK","CIFR","IREN","QUBT","KULR","MVIS","APLD"],
+    orb:   ["NVDA","AMD","TSLA","META","AAPL","MSFT","AMZN","GOOGL","AVGO","PLTR","CRWD","DDOG","NET","COIN","SQ","UBER","SHOP","NFLX","SPY","QQQ"],
+    reversal:["NVDA","AMD","TSLA","META","AAPL","MSFT","PLTR","CRWD","COIN","MARA","SOFI","HOOD","SNAP","RDDT","NIO","SPY","QQQ","IWM","GLD","SOXL"],
+  };
+
+  const tickers = tickerSets[type];
+  btn.disabled = true;
+  btn.textContent = "Scanning…";
+  btn.style.color = "var(--gold)";
+  btn.style.borderColor = "var(--gold)";
+  showToast(`Scanning ${tickers.length} tickers for ${type} setups…`);
+
+  let found = 0;
+  const BATCH = 5;
+
+  for (let b = 0; b < tickers.length; b += BATCH) {
+    const slice = tickers.slice(b, b+BATCH);
+    const results = await Promise.allSettled(slice.map(async ticker => {
+      const res  = await fetch(`${WORKER}/?ticker=${ticker}&interval=${type==="scalp"?"15min":"day"}`);
+      const json = await res.json();
+      if (!json.results?.length) return null;
+      const candles = json.results.map(r=>({open:r.o,close:r.c,high:r.h,low:r.l,vol:r.v,ts:r.t}));
+
+      // Run pattern detection
+      const flag = detectManualFlag(candles, type);
+      if (!flag) return null;
+
+      return {
+        id: Date.now()+ticker,
+        type,
+        ticker,
+        direction: flag.direction,
+        time: new Date().toISOString(),
+        price: flag.price,
+        pole: flag.pole,
+        rvol: flag.rvol,
+        rsi: flag.rsi,
+        target: flag.target,
+        stop: flag.stop,
+        conviction: flag.conviction,
+        candleType: flag.candleType,
+        orbQuality: flag.orbQuality,
+        orbAtrPct: flag.orbAtrPct,
+        srLevel: flag.srLevel,
+        vwap: flag.vwap,
+        outcome: null,
+        notes: "",
+        manual: true,
+      };
+    }));
+
+    results.forEach(r => {
+      if (r.status==="fulfilled" && r.value) {
+        // Don't duplicate
+        if (!alerts.find(a=>a.ticker===r.value.ticker&&a.type===type&&a.manual)) {
+          alerts.unshift(r.value);
+          found++;
+        }
+      }
+    });
+  }
+
+  btn.disabled = false;
+  btn.textContent = type==="scalp"?"⚡ Scalp":type==="orb"?"📐 ORB":"🔄 Reversal";
+  btn.style.color = "";
+  btn.style.borderColor = "";
+  showToast(found > 0 ? `✅ Found ${found} ${type} setup${found>1?"s":""}!` : `No ${type} setups found right now`);
+  renderAll();
+  updateStats();
+}
+
+// ── Pattern detection for manual scans ────────────────────────────────────────
+function detectManualFlag(candles, type) {
+  const n = candles.length;
+  if (n < 20) return null;
+
+  // Simple bull flag detection for daily candles
+  for (let i = n-2; i >= 8; i--) {
+    for (let poleLen = 4; poleLen <= 10; poleLen++) {
+      const ps = i - poleLen; if (ps<0) break;
+      const pole = candles.slice(ps, i);
+      const poleGain = (candles[i-1].close - candles[ps].open) / candles[ps].open;
+      if (poleGain < 0.06) continue;
+      const greenCount = pole.filter(c=>c.close>c.open).length;
+      if (greenCount < Math.ceil(poleLen*0.65)) continue;
+      const avgPoleVol = pole.reduce((s,c)=>s+c.vol,0)/poleLen;
+      const flagCandles = candles.slice(i, Math.min(i+10,n));
+      if (flagCandles.length < 3) continue;
+      const flagHigh = Math.max(...flagCandles.map(c=>c.high));
+      const flagLow  = Math.min(...flagCandles.map(c=>c.low));
+      const poleTop  = candles[i-1].close;
+      const flagRange = (flagHigh-flagLow)/poleTop;
+      if (flagRange > 0.10) continue;
+      const avgFlagVol = flagCandles.reduce((s,c)=>s+c.vol,0)/flagCandles.length;
+      const volContract = 1 - avgFlagVol/avgPoleVol;
+      if (volContract < 0.20) continue;
+      const flagAvg = flagCandles.reduce((s,c)=>s+c.close,0)/flagCandles.length;
+      if (flagAvg < candles[ps].open + (poleTop-candles[ps].open)*0.5) continue;
+
+      // RSI
+      const closes = candles.slice(-15).map(c=>c.close);
+      let gains=0,losses=0;
+      for(let k=1;k<closes.length;k++){const d=closes[k]-closes[k-1];if(d>0)gains+=d;else losses-=d}
+      const ag=gains/7,al=losses/7;
+      const rsi=al===0?100:Math.round((100-100/(1+ag/al))*10)/10;
+
+      return {
+        direction: "bull",
+        price: candles[n-1].close.toFixed(2),
+        pole: (poleGain*100).toFixed(1),
+        rvol: (avgPoleVol/(avgFlagVol||1)).toFixed(1),
+        rsi,
+        target: (poleTop*(1+poleGain)).toFixed(2),
+        stop: (flagLow*0.99).toFixed(2),
+        conviction: Math.min(5, Math.round(volContract*5)+2),
+        candleType: type==="reversal"?"DOJI":null,
+        orbQuality: type==="orb"?((flagRange<0.03)?"ELITE":"GOOD"):null,
+        orbAtrPct: type==="orb"?(flagRange*100).toFixed(0):null,
+        srLevel: null,
+        vwap: null,
+      };
+    }
+  }
+  return null;
+}
+
+// ── Test Mode ─────────────────────────────────────────────────────────────────
+function loadTestAlerts() {
+  const now = new Date();
+  alerts = [
+    {
+      id:"t1", type:"scalp", ticker:"MARA", direction:"bull",
+      time: new Date(now-45*60000).toISOString(),
+      price:"8.42", pole:"4.1", rvol:"7.3", rsi:"78",
+      vwap:"2.9% above VWAP ✅", target:"8.77", stop:"8.28", float:"48.2M",
+      conviction:4, outcome:null, notes:"",
+    },
+    {
+      id:"t2", type:"orb", ticker:"NVDA", direction:"bull",
+      time: new Date(now-32*60000).toISOString(),
+      price:"924.50", orbQuality:"ELITE", orbAtrPct:"22",
+      rvol:"3.8", rsi:"71", target:"931.20", stop:"922.10",
+      conviction:5, outcome:null, notes:"",
+    },
+    {
+      id:"t3", type:"reversal", ticker:"AMD", direction:"bear",
+      time: new Date(now-18*60000).toISOString(),
+      price:"158.30", candleType:"SHOOTING STAR",
+      rvol:"4.1", rsi:"91", srLevel:"Prev Day High $159.40",
+      target:"154.20", stop:"160.10",
+      conviction:5, outcome:null, notes:"",
+    },
+    {
+      id:"t4", type:"scalp", ticker:"SOFI", direction:"bull",
+      time: new Date(now-12*60000).toISOString(),
+      price:"7.18", pole:"3.2", rvol:"5.9", rsi:"68",
+      vwap:"1.1% above VWAP ✅", target:"7.41", stop:"7.05", float:"22.1M",
+      conviction:3, outcome:null, notes:"",
+    },
+    {
+      id:"t5", type:"orb", ticker:"TSLA", direction:"bear",
+      time: new Date(now-8*60000).toISOString(),
+      price:"182.40", orbQuality:"GOOD", orbAtrPct:"35",
+      rvol:"2.9", rsi:"22", target:"178.20", stop:"184.10",
+      conviction:4, outcome:null, notes:"",
+    },
+    {
+      id:"t6", type:"reversal", ticker:"PLTR", direction:"bull",
+      time: new Date(now-3*60000).toISOString(),
+      price:"21.80", candleType:"HAMMER",
+      rvol:"5.2", rsi:"9", srLevel:"Prev Day Low $21.65",
+      target:"23.40", stop:"21.20",
+      conviction:5, outcome:null, notes:"",
+    },
+  ];
+  showToast("⚡ Test mode — 6 demo alerts loaded");
+  renderAll();
+  updateStats();
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 updateClock();
 setInterval(updateClock, 1000);
