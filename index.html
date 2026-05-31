@@ -1590,6 +1590,30 @@ body {
 <div id="toast">📋 Copied to clipboard</div>
 
 <script>
+// ── Toast & Clipboard ────────────────────────────────────────────────────────
+function showToast(msg) {
+  const toast = document.getElementById("toast");
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 2500);
+}
+
+function copyTicker(ticker, e) {
+  if (e) e.stopPropagation();
+  navigator.clipboard.writeText(ticker).then(() => {
+    showToast(`📋 ${ticker} copied!`);
+  }).catch(() => {
+    const el = document.createElement("textarea");
+    el.value = ticker;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand("copy");
+    document.body.removeChild(el);
+    showToast(`📋 ${ticker} copied!`);
+  });
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 const RAILWAY_URL = "https://steep-morning-ce86.mattsimms46.workers.dev";
 const API_URL     = "https://bull-flag-scalper-production.up.railway.app";
