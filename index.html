@@ -1581,20 +1581,7 @@ body {
 
 <div id="toast">📋 Copied to clipboard</div>
 
-<!-- Expanded Chart Overlay -->
-<div id="chart-overlay" onclick="closeChartOverlay(event)">
-  <div id="chart-modal">
-    <div id="chart-modal-header">
-      <div>
-        <div id="chart-modal-title">—</div>
-        <div id="chart-modal-meta"></div>
-      </div>
-      <button id="chart-modal-close" onclick="closeChartOverlay()">✕ Close</button>
-    </div>
-    <svg id="chart-modal-svg" viewBox="0 0 740 220" xmlns="http://www.w3.org/2000/svg"></svg>
-    <div id="chart-modal-levels"></div>
-  </div>
-</div>
+
 
 <script>
 // ── Toast & Clipboard ────────────────────────────────────────────────────────
@@ -2835,159 +2822,139 @@ function loadTestAlerts() {
   updateStats();
 }
 
-// ── Expanded Chart ────────────────────────────────────────────────────────────
-function openExpandedChart(ticker, type, alertData) {
+// ── Inline Chart Expansion ────────────────────────────────────────────────────
+function buildExpandedChart(ticker, type, alertData) {
   const candles = alertCandles[ticker];
-  if (!candles || candles.length < 5) {
-    showToast("No chart data available for " + ticker);
-    return;
-  }
+  if (!candles || candles.length < 5) return null;
 
-  const W = 740, H = 220, PAD = { top:20, right:60, bottom:30, left:55 };
+  const W = 620, H = 200, PAD = { top:16, right:58, bottom:28, left:52 };
   const CW = W - PAD.left - PAD.right;
   const CH = H - PAD.top  - PAD.bottom;
 
-  const prices = candles.map(c => c.close);
-  const highs  = candles.map(c => c.high);
-  const lows   = candles.map(c => c.low);
-  const mn = Math.min(...lows)  * 0.998;
-  const mx = Math.max(...highs) * 1.002;
-  const rng = mx - mn;
+  const highs = candles.map(c=>c.high), lows = candles.map(c=>c.low);
+  const mn = Math.min(...lows)*0.998, mx = Math.max(...highs)*1.002, rng = mx-mn;
+  const sx = i => PAD.left + (i/(candles.length-1))*CW;
+  const sy = p => PAD.top  + (1-(p-mn)/rng)*CH;
 
-  const sx = i => PAD.left + (i / (candles.length-1)) * CW;
-  const sy = p => PAD.top  + (1 - (p-mn)/rng) * CH;
-
-  // Key levels
-  const poleEnd  = Math.floor(candles.length * 0.70);
-  const poleTop  = Math.max(...candles.slice(0, poleEnd).map(c=>c.high));
-  const poleBot  = Math.min(...candles.slice(0, poleEnd).map(c=>c.low));
-  const flagHigh = Math.max(...candles.slice(poleEnd).map(c=>c.high));
-  const flagLow  = Math.min(...candles.slice(poleEnd).map(c=>c.low));
+  const poleEnd = Math.floor(candles.length*0.70);
   const currentPrice = candles[candles.length-1].close;
 
-  // Resistance levels from swing highs/lows
-  const swingHighs = [], swingLows = [];
-  for (let i=2; i<candles.length-2; i++) {
-    if (candles[i].high > candles[i-1].high && candles[i].high > candles[i-2].high &&
-        candles[i].high > candles[i+1].high && candles[i].high > candles[i+2].high) {
-      swingHighs.push(candles[i].high);
-    }
-    if (candles[i].low < candles[i-1].low && candles[i].low < candles[i-2].low &&
-        candles[i].low < candles[i+1].low && candles[i].low < candles[i+2].low) {
-      swingLows.push(candles[i].low);
-    }
+  // Swing highs/lows for resistance/support
+  const swingHighs=[], swingLows=[];
+  for (let i=2;i<candles.length-2;i++) {
+    if (candles[i].high>candles[i-1].high&&candles[i].high>candles[i+1].high) swingHighs.push(candles[i].high);
+    if (candles[i].low<candles[i-1].low&&candles[i].low<candles[i+1].low)   swingLows.push(candles[i].low);
   }
 
-  // Colors per type
   const col = {
-    scalp:    { pole:"rgba(0,229,176,0.12)",   flag:"rgba(250,204,21,0.10)",  line:"#00e5b0", lineW:2 },
-    orb:      { pole:"rgba(76,155,232,0.12)",  flag:"rgba(167,139,250,0.10)", line:"#4c9be8", lineW:2 },
-    reversal: { pole:"rgba(239,83,80,0.12)",   flag:"rgba(251,146,60,0.10)",  line:"#ef5350", lineW:2 },
-  }[type] || { pole:"rgba(0,229,176,0.12)", flag:"rgba(250,204,21,0.10)", line:"#00e5b0", lineW:2 };
+    scalp:    {pole:"rgba(0,229,176,0.12)",  flag:"rgba(250,204,21,0.10)", line:"#00e5b0"},
+    orb:      {pole:"rgba(76,155,232,0.12)", flag:"rgba(167,139,250,0.10)",line:"#4c9be8"},
+    reversal: {pole:"rgba(239,83,80,0.12)",  flag:"rgba(251,146,60,0.10)", line:"#ef5350"},
+  }[type]||{pole:"rgba(0,229,176,0.12)",flag:"rgba(250,204,21,0.10)",line:"#00e5b0"};
 
-  // Build candlestick bars or line
-  const barW = Math.max(2, CW / candles.length - 1);
-  let candleBars = "";
-  candles.forEach((c, i) => {
-    const x   = sx(i);
-    const isG = c.close >= c.open;
-    const col2= isG ? "#26a69a" : "#ef5350";
-    const bodyTop = Math.min(sy(c.open), sy(c.close));
-    const bodyH   = Math.abs(sy(c.open) - sy(c.close)) || 1;
-    candleBars += `<line x1="${x.toFixed(1)}" y1="${sy(c.high).toFixed(1)}" x2="${x.toFixed(1)}" y2="${sy(c.low).toFixed(1)}" stroke="${col2}" stroke-width="1" opacity="0.6"/>`;
-    candleBars += `<rect x="${(x-barW/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${bodyH.toFixed(1)}" fill="${col2}" rx="0.5"/>`;
+  const barW = Math.max(2, CW/candles.length-1);
+  let bars="";
+  candles.forEach((c,i)=>{
+    const x=sx(i), isG=c.close>=c.open, cc=isG?"#26a69a":"#ef5350";
+    const bt=Math.min(sy(c.open),sy(c.close)), bh=Math.abs(sy(c.open)-sy(c.close))||1;
+    bars+=`<line x1="${x.toFixed(1)}" y1="${sy(c.high).toFixed(1)}" x2="${x.toFixed(1)}" y2="${sy(c.low).toFixed(1)}" stroke="${cc}" stroke-width="1" opacity="0.5"/>`;
+    bars+=`<rect x="${(x-barW/2).toFixed(1)}" y="${bt.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${cc}" rx="0.5"/>`;
   });
 
-  // Horizontal level lines
-  const levelLines = (levels, color, dash="") => levels.slice(0,3).map(l => {
-    const y = sy(l).toFixed(1);
-    return `<line x1="${PAD.left}" y1="${y}" x2="${W-PAD.right+4}" y2="${y}" stroke="${color}" stroke-width="0.8" stroke-dasharray="${dash}" opacity="0.7"/>
-            <text x="${W-PAD.right+6}" y="${(parseFloat(y)+4).toFixed(1)}" fill="${color}" font-size="9" font-family="monospace">$${l.toFixed(2)}</text>`;
-  }).join("");
-
-  // Y-axis labels
   const yLabels = Array.from({length:5},(_,i)=>{
-    const p = mn + (rng/4)*i;
-    const y = sy(p).toFixed(1);
-    return `<text x="${PAD.left-4}" y="${(parseFloat(y)+4).toFixed(1)}" fill="#64748b" font-size="9" text-anchor="end" font-family="monospace">$${p.toFixed(2)}</text>
+    const p=mn+(rng/4)*i, y=sy(p).toFixed(1);
+    return `<text x="${PAD.left-4}" y="${(+y+4).toFixed(1)}" fill="#475569" font-size="9" text-anchor="end" font-family="monospace">$${p.toFixed(2)}</text>
             <line x1="${PAD.left}" y1="${y}" x2="${W-PAD.right}" y2="${y}" stroke="#1e293b" stroke-width="0.5"/>`;
   }).join("");
 
-  // X-axis date labels (every 10 candles)
-  const xLabels = candles.filter((_,i)=>i%Math.max(1,Math.floor(candles.length/6))===0).map((_,j)=>{
-    const i = j * Math.max(1, Math.floor(candles.length/6));
-    const x = sx(Math.min(i, candles.length-1)).toFixed(1);
-    return `<text x="${x}" y="${(H-10).toFixed(1)}" fill="#64748b" font-size="9" text-anchor="middle" font-family="monospace">${candles[Math.min(i,candles.length-1)].ts ? new Date(candles[Math.min(i,candles.length-1)].ts).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : ""}</text>`;
+  const xLabels = Array.from({length:6},(_,j)=>{
+    const i=Math.floor((j/5)*(candles.length-1));
+    const x=sx(i).toFixed(1);
+    const d=candles[i].ts?new Date(candles[i].ts).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
+    return `<text x="${x}" y="${(H-6).toFixed(1)}" fill="#475569" font-size="9" text-anchor="middle" font-family="monospace">${d}</text>`;
   }).join("");
 
-  // Current price line
-  const currY = sy(currentPrice).toFixed(1);
-  const currLine = `<line x1="${PAD.left}" y1="${currY}" x2="${W-PAD.right}" y2="${currY}" stroke="#f0b429" stroke-width="1" stroke-dasharray="4,3"/>
-    <rect x="${W-PAD.right+2}" y="${(parseFloat(currY)-8).toFixed(1)}" width="52" height="16" fill="#f0b429" rx="2"/>
-    <text x="${W-PAD.right+28}" y="${(parseFloat(currY)+4).toFixed(1)}" fill="#000" font-size="10" text-anchor="middle" font-family="monospace" font-weight="bold">$${currentPrice.toFixed(2)}</text>`;
+  const resistLines = swingHighs.filter(h=>h>currentPrice*0.98&&h<currentPrice*1.08).slice(0,3)
+    .map(h=>`<line x1="${PAD.left}" y1="${sy(h).toFixed(1)}" x2="${W-PAD.right}" y2="${sy(h).toFixed(1)}" stroke="#ef5350" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.7"/>
+             <text x="${W-PAD.right+4}" y="${(sy(h)+4).toFixed(1)}" fill="#ef5350" font-size="9" font-family="monospace">$${h.toFixed(2)}</text>`).join("");
 
-  // Target & stop lines
-  const targetLine = alertData?.target ? `
-    <line x1="${PAD.left}" y1="${sy(parseFloat(alertData.target)).toFixed(1)}" x2="${W-PAD.right}" y2="${sy(parseFloat(alertData.target)).toFixed(1)}" stroke="#22c55e" stroke-width="1" stroke-dasharray="6,3" opacity="0.8"/>
-    <text x="${W-PAD.right+6}" y="${(sy(parseFloat(alertData.target))+4).toFixed(1)}" fill="#22c55e" font-size="9" font-family="monospace">T $${alertData.target}</text>` : "";
-  const stopLine = alertData?.stop ? `
-    <line x1="${PAD.left}" y1="${sy(parseFloat(alertData.stop)).toFixed(1)}" x2="${W-PAD.right}" y2="${sy(parseFloat(alertData.stop)).toFixed(1)}" stroke="#ef5350" stroke-width="1" stroke-dasharray="6,3" opacity="0.8"/>
-    <text x="${W-PAD.right+6}" y="${(sy(parseFloat(alertData.stop))+4).toFixed(1)}" fill="#ef5350" font-size="9" font-family="monospace">S $${alertData.stop}</text>` : "";
+  const supportLines = swingLows.filter(l=>l>currentPrice*0.92&&l<currentPrice*1.02).slice(0,3)
+    .map(l=>`<line x1="${PAD.left}" y1="${sy(l).toFixed(1)}" x2="${W-PAD.right}" y2="${sy(l).toFixed(1)}" stroke="#22c55e" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.7"/>
+             <text x="${W-PAD.right+4}" y="${(sy(l)+4).toFixed(1)}" fill="#22c55e" font-size="9" font-family="monospace">$${l.toFixed(2)}</text>`).join("");
 
-  const svgContent = `
-    <rect width="${W}" height="${H}" fill="#080c17"/>
-    <!-- Zone highlights -->
+  const currY=sy(currentPrice).toFixed(1);
+  const currLine=`<line x1="${PAD.left}" y1="${currY}" x2="${W-PAD.right}" y2="${currY}" stroke="#f0b429" stroke-width="1" stroke-dasharray="4,3"/>
+    <rect x="${W-PAD.right+2}" y="${(+currY-8).toFixed(1)}" width="50" height="14" fill="#f0b429" rx="2"/>
+    <text x="${W-PAD.right+27}" y="${(+currY+4).toFixed(1)}" fill="#000" font-size="9" text-anchor="middle" font-family="monospace" font-weight="bold">$${currentPrice.toFixed(2)}</text>`;
+
+  const tgt=alertData?.target, stp=alertData?.stop;
+  const tgtLine=tgt&&parseFloat(tgt)>0?`<line x1="${PAD.left}" y1="${sy(parseFloat(tgt)).toFixed(1)}" x2="${W-PAD.right}" y2="${sy(parseFloat(tgt)).toFixed(1)}" stroke="#22c55e" stroke-width="1" stroke-dasharray="5,3"/>
+    <text x="${W-PAD.right+4}" y="${(sy(parseFloat(tgt))+4).toFixed(1)}" fill="#22c55e" font-size="9" font-family="monospace">T $${tgt}</text>`:"";
+  const stpLine=stp&&parseFloat(stp)>0?`<line x1="${PAD.left}" y1="${sy(parseFloat(stp)).toFixed(1)}" x2="${W-PAD.right}" y2="${sy(parseFloat(stp)).toFixed(1)}" stroke="#ef5350" stroke-width="1" stroke-dasharray="5,3"/>
+    <text x="${W-PAD.right+4}" y="${(sy(parseFloat(stp))+4).toFixed(1)}" fill="#ef5350" font-size="9" font-family="monospace">S $${stp}</text>`:"";
+
+  const typeAccent={scalp:"#00e5b0",orb:"#4c9be8",reversal:"#ef5350"}[type]||"#00e5b0";
+
+  const svg=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+    <rect width="${W}" height="${H}" fill="#000"/>
     <rect x="${PAD.left}" y="${PAD.top}" width="${(sx(poleEnd)-PAD.left).toFixed(1)}" height="${CH}" fill="${col.pole}"/>
     <rect x="${sx(poleEnd).toFixed(1)}" y="${PAD.top}" width="${(W-PAD.right-sx(poleEnd)).toFixed(1)}" height="${CH}" fill="${col.flag}"/>
-    <!-- Grid -->
-    ${yLabels}
-    ${xLabels}
-    <!-- Resistance/Support levels -->
-    ${levelLines(swingHighs.filter(h=>h>currentPrice*0.99), "#ef5350", "3,3")}
-    ${levelLines(swingLows.filter(l=>l<currentPrice*1.01),  "#22c55e", "3,3")}
-    <!-- Candles -->
-    ${candleBars}
-    <!-- Key lines -->
-    ${currLine}
-    ${targetLine}
-    ${stopLine}
-    <!-- Border -->
+    ${yLabels}${xLabels}${resistLines}${supportLines}${bars}${currLine}${tgtLine}${stpLine}
     <rect x="${PAD.left}" y="${PAD.top}" width="${CW}" height="${CH}" fill="none" stroke="#1e293b" stroke-width="1"/>
-  `;
+  </svg>`;
 
-  // Update modal
-  const typeAccent = {scalp:"#00e5b0",orb:"#4c9be8",reversal:"#ef5350"}[type]||"#00e5b0";
-  document.getElementById("chart-modal-title").innerHTML =
-    `<span style="color:${typeAccent}">${ticker}</span> <span style="font-size:13px;color:var(--text2)">${type.toUpperCase()} · ${candles.length} candles</span>`;
-  document.getElementById("chart-modal-meta").innerHTML =
-    `<span>Price: <strong style="color:#f0b429">$${currentPrice.toFixed(2)}</strong></span>
-     <span>Target: <strong style="color:#22c55e">$${alertData?.target||"—"}</strong></span>
-     <span>Stop: <strong style="color:#ef5350">$${alertData?.stop||"—"}</strong></span>
-     <span style="color:${typeAccent}">▉ Pole zone &nbsp; ▉ Flag zone</span>`;
+  const levels = [
+    ...swingHighs.filter(h=>h>currentPrice*0.98&&h<currentPrice*1.08).slice(0,2).map(h=>`<span class="level-pill level-resistance">R $${h.toFixed(2)}</span>`),
+    ...swingLows.filter(l=>l>currentPrice*0.92&&l<currentPrice*1.02).slice(0,2).map(l=>`<span class="level-pill level-support">S $${l.toFixed(2)}</span>`),
+    tgt?`<span class="level-pill level-pole-top">🎯 $${tgt}</span>`:"",
+    stp?`<span class="level-pill level-resistance">🛑 $${stp}</span>`:"",
+  ].filter(Boolean).join("");
 
-  document.getElementById("chart-modal-svg").innerHTML = svgContent;
-
-  // Level pills
-  const allLevels = [
-    ...swingHighs.filter(h=>h>currentPrice*0.98&&h<currentPrice*1.05).slice(0,2).map(h=>({label:`R $${h.toFixed(2)}`,cls:"level-resistance"})),
-    ...swingLows.filter(l=>l>currentPrice*0.95&&l<currentPrice*1.02).slice(0,2).map(l=>({label:`S $${l.toFixed(2)}`,cls:"level-support"})),
-    alertData?.target ? {label:`🎯 Target $${alertData.target}`, cls:"level-pole-top"} : null,
-    alertData?.stop   ? {label:`🛑 Stop $${alertData.stop}`,    cls:"level-resistance"} : null,
-  ].filter(Boolean);
-
-  document.getElementById("chart-modal-levels").innerHTML = allLevels
-    .map(l=>`<span class="level-pill ${l.cls}">${l.label}</span>`).join("");
-
-  document.getElementById("chart-overlay").classList.add("visible");
+  return `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;display:flex;gap:12px;flex-wrap:wrap">
+    <span>Price: <strong style="color:#f0b429">$${currentPrice.toFixed(2)}</strong></span>
+    <span style="color:rgba(255,255,255,0.2)">|</span>
+    <span style="color:${typeAccent}">▉ Pole &nbsp;▉ Flag</span>
+    <span style="color:rgba(255,255,255,0.2)">|</span>
+    <span>🔴 Resistance &nbsp;🟢 Support &nbsp;🟡 Current</span>
+  </div>
+  ${svg}
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${levels}</div>`;
 }
 
-function closeChartOverlay(e) {
-  if (!e || e.target === document.getElementById("chart-overlay") || e.target === document.getElementById("chart-modal-close")) {
-    document.getElementById("chart-overlay").classList.remove("visible");
+function openExpandedChart(ticker, type, alertData) {
+  // Find the card with this ticker
+  const cards = document.querySelectorAll(".alert-card");
+  let targetCard = null;
+  cards.forEach(card => {
+    const tickerEl = card.querySelector(".alert-ticker");
+    if (tickerEl && tickerEl.textContent.trim() === ticker) targetCard = card;
+  });
+  if (!targetCard) return;
+
+  // Toggle expansion
+  let expandDiv = targetCard.querySelector(".chart-expanded");
+  if (expandDiv && expandDiv.classList.contains("open")) {
+    expandDiv.classList.remove("open");
+    return;
   }
+
+  // Build chart content
+  const chartHTML = buildExpandedChart(ticker, type, alertData);
+  if (!chartHTML) { showToast("No chart data for " + ticker); return; }
+
+  if (!expandDiv) {
+    expandDiv = document.createElement("div");
+    expandDiv.className = "chart-expanded";
+    targetCard.appendChild(expandDiv);
+  }
+  expandDiv.innerHTML = chartHTML;
+  expandDiv.classList.add("open");
+  targetCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+function closeChartOverlay() {}
+
+// ── Init ──────────────────────────────────────────────────────────────────────// ── Init ──────────────────────────────────────────────────────────────────────
 updateClock();
 setInterval(updateClock, 1000);
 fetchMarketBias();
