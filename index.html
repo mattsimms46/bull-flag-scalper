@@ -1770,21 +1770,21 @@ async function fetchMarketBias() {
       if (chgEl)   { chgEl.textContent=`${chg>0?"+":""}${chg}%`; chgEl.className=`ticker-chg ${chg>0?"up":"down"}`; }
     }
 
-    const biasEl  = document.getElementById("bias-label") || {textContent:'',className:''};
-    const detailEl= document.getElementById("bias-detail") || {textContent:''};
+    const biasEl  = document.getElementById("bias-label")  || {textContent:'',className:''};
+    const detailEl= document.getElementById("bias-detail") || {textContent:'',style:{}};
     const sbMkt   = document.getElementById("sb-mkt");
     const rcBias  = document.getElementById("rc-bias");
 
     let biasText, biasClass, biasShort;
     if (biasScore >= 2) {
       biasText="BULLISH"; biasClass="bull"; biasShort="BULL";
-      document.getElementById("sb-mkt").style.color="var(--green2)";
+      const sbMktEl = document.getElementById("sb-mkt"); if(sbMktEl) sbMktEl.style.color="var(--green2)";
     } else if (biasScore <= -2) {
       biasText="BEARISH"; biasClass="bear"; biasShort="BEAR";
-      document.getElementById("sb-mkt").style.color="var(--red2)";
+      const sbMktEl2 = document.getElementById("sb-mkt"); if(sbMktEl2) sbMktEl2.style.color="var(--red2)";
     } else {
       biasText="NEUTRAL/CHOPPY"; biasClass="neutral"; biasShort="CHOP";
-      document.getElementById("sb-mkt").style.color="var(--gold)";
+      const sbMktEl3 = document.getElementById("sb-mkt"); if(sbMktEl3) sbMktEl3.style.color="var(--gold)";
     }
 
     biasEl.textContent  = biasText;
@@ -2449,14 +2449,21 @@ function renderBnH() {
 async function manualScan(type) {
   const WORKER = "https://steep-morning-ce86.mattsimms46.workers.dev";
   const btnMap = { scalp:"btn-scalp", orb:"btn-orb", reversal:"btn-rev" };
+  const btnLabels = { scalp:"⚡ Scalp", orb:"📐 ORB", reversal:"🔄 Reversal" };
   const btn = document.getElementById(btnMap[type]);
-  if (btn.disabled) return;
+  if (!btn || btn.disabled) return;
 
-  // Tickers per scanner type
+  // Always use daily candles — works weekends + weekdays
+  // 15min only works during market hours
+  const et = new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"}));
+  const h = et.getHours(), m = et.getMinutes();
+  const isMarketHours = et.getDay()>=1&&et.getDay()<=5&&(h*60+m)>=570&&(h*60+m)<960;
+  const interval = (type==="scalp" && isMarketHours) ? "15min" : "day";
+
   const tickerSets = {
-    scalp: ["SOFI","HOOD","MARA","RIOT","HIMS","RDDT","SNAP","AMC","GME","NIO","ACHR","RKLB","ASTS","CLSK","CIFR","IREN","QUBT","KULR","MVIS","APLD"],
-    orb:   ["NVDA","AMD","TSLA","META","AAPL","MSFT","AMZN","GOOGL","AVGO","PLTR","CRWD","DDOG","NET","COIN","SQ","UBER","SHOP","NFLX","SPY","QQQ"],
-    reversal:["NVDA","AMD","TSLA","META","AAPL","MSFT","PLTR","CRWD","COIN","MARA","SOFI","HOOD","SNAP","RDDT","NIO","SPY","QQQ","IWM","GLD","SOXL"],
+    scalp:    ["SOFI","HOOD","MARA","RIOT","HIMS","RDDT","SNAP","AMC","GME","NIO","ACHR","RKLB","ASTS","CLSK","CIFR","IREN","QUBT","KULR","APLD","BTCS"],
+    orb:      ["NVDA","AMD","TSLA","META","AAPL","MSFT","AMZN","GOOGL","AVGO","PLTR","CRWD","DDOG","NET","COIN","SQ","UBER","SHOP","NFLX","SPY","QQQ","IWM","MARA","SOFI","SNAP","RBLX"],
+    reversal: ["NVDA","AMD","TSLA","META","AAPL","MSFT","PLTR","CRWD","COIN","MARA","SOFI","HOOD","SNAP","RDDT","NIO","SPY","QQQ","IWM","GLD","SOXL","ARKK","NFLX","SHOP","UBER","DDOG"],
   };
 
   const tickers = tickerSets[type];
@@ -2464,63 +2471,75 @@ async function manualScan(type) {
   btn.textContent = "Scanning…";
   btn.style.color = "var(--gold)";
   btn.style.borderColor = "var(--gold)";
-  showToast(`Scanning ${tickers.length} tickers for ${type} setups…`);
+  showToast(`🔍 Scanning ${tickers.length} tickers using ${interval} candles…`);
 
   let found = 0;
   const BATCH = 5;
 
   for (let b = 0; b < tickers.length; b += BATCH) {
     const slice = tickers.slice(b, b+BATCH);
+    // Update button progress
+    btn.textContent = `${b+BATCH}/${tickers.length}`;
+
     const results = await Promise.allSettled(slice.map(async ticker => {
-      const res  = await fetch(`${WORKER}/?ticker=${ticker}&interval=${type==="scalp"?"15min":"day"}`);
-      const json = await res.json();
-      if (!json.results?.length) return null;
-      const candles = json.results.map(r=>({open:r.o,close:r.c,high:r.h,low:r.l,vol:r.v,ts:r.t}));
+      try {
+        const res  = await fetch(`${WORKER}/?ticker=${ticker}&interval=${interval}`);
+        if (!res.ok) return null;
+        const json = await res.json();
+        if (!json.results?.length) return null;
+        const candles = json.results.map(r=>({open:r.o,close:r.c,high:r.h,low:r.l,vol:r.v,ts:r.t}));
+        if (candles.length < 10) return null;
 
-      // Run pattern detection
-      const flag = detectManualFlag(candles, type);
-      if (!flag) return null;
+        const flag = detectManualFlag(candles, type);
+        if (!flag) return null;
 
-      return {
-        id: Date.now()+ticker,
-        type,
-        ticker,
-        direction: flag.direction,
-        time: new Date().toISOString(),
-        price: flag.price,
-        pole: flag.pole,
-        rvol: flag.rvol,
-        rsi: flag.rsi,
-        target: flag.target,
-        stop: flag.stop,
-        conviction: flag.conviction,
-        candleType: flag.candleType,
-        orbQuality: flag.orbQuality,
-        orbAtrPct: flag.orbAtrPct,
-        srLevel: flag.srLevel,
-        vwap: flag.vwap,
-        outcome: null,
-        notes: "",
-        manual: true,
-      };
+        return {
+          id: Date.now()+""+Math.random().toString(36).slice(2,5)+ticker,
+          type, ticker,
+          direction: flag.direction,
+          time: new Date().toISOString(),
+          price: flag.price,
+          pole: flag.pole,
+          rvol: flag.rvol,
+          rsi: flag.rsi,
+          target: flag.target,
+          stop: flag.stop,
+          conviction: flag.conviction,
+          candleType: flag.candleType || null,
+          orbQuality: flag.orbQuality || null,
+          orbAtrPct: flag.orbAtrPct || null,
+          srLevel: null,
+          vwap: null,
+          float: null,
+          outcome: null,
+          notes: `Manual scan · ${interval} · ${new Date().toLocaleDateString()}`,
+          manual: true,
+        };
+      } catch(e) { return null; }
     }));
 
     results.forEach(r => {
       if (r.status==="fulfilled" && r.value) {
-        // Don't duplicate
         if (!alerts.find(a=>a.ticker===r.value.ticker&&a.type===type&&a.manual)) {
           alerts.unshift(r.value);
           found++;
         }
       }
     });
+
+    // Show results as they come in
+    if (found > 0) renderAll();
   }
 
   btn.disabled = false;
-  btn.textContent = type==="scalp"?"⚡ Scalp":type==="orb"?"📐 ORB":"🔄 Reversal";
+  btn.textContent = btnLabels[type];
   btn.style.color = "";
   btn.style.borderColor = "";
-  showToast(found > 0 ? `✅ Found ${found} ${type} setup${found>1?"s":""}!` : `No ${type} setups found right now`);
+
+  const msg = found > 0
+    ? `✅ Found ${found} ${type} setup${found>1?"s":""}! Using ${interval} candles`
+    : `No ${type} setups found · Try loosening criteria or different tickers`;
+  showToast(msg);
   renderAll();
   updateStats();
 }
