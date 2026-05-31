@@ -1709,27 +1709,24 @@ function renderAll() {
   renderBnH();
 }
 
-// Event delegation for sparkline expand clicks
+// Sparkline click — open chart
 document.addEventListener("click", function(e) {
-  // Click on sparkline — open/close chart
   const sparkEl = e.target.closest(".spark-expand");
-  if (sparkEl) {
-    const ticker = sparkEl.dataset.ticker;
-    const type   = sparkEl.dataset.type;
-    openExpandedChart(ticker, type, {
-      target: sparkEl.dataset.target,
-      stop:   sparkEl.dataset.stop,
-      price:  sparkEl.dataset.price,
-    });
-    return;
-  }
-  // Click anywhere on the expanded chart — close it
-  const chartEl = e.target.closest(".chart-expanded");
-  if (chartEl) {
-    chartEl.classList.remove("open");
-    return;
-  }
+  if (!sparkEl) return;
+  e.stopPropagation();
+  openExpandedChart(sparkEl.dataset.ticker, sparkEl.dataset.type, {
+    target: sparkEl.dataset.target,
+    stop:   sparkEl.dataset.stop,
+    price:  sparkEl.dataset.price,
+  });
 });
+
+// Click anywhere on expanded chart — collapse it
+document.addEventListener("click", function(e) {
+  if (e.target.closest(".spark-expand")) return; // handled above
+  const openCharts = document.querySelectorAll(".chart-expanded.open");
+  openCharts.forEach(c => c.classList.remove("open"));
+}, true); // capture phase so it fires before other handlers
 
 // Hover glow on sparkline
 document.addEventListener("mouseover", function(e) {
@@ -2907,8 +2904,7 @@ function buildExpandedChart(ticker, type, alertData) {
 
   const svg=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
     <rect width="${W}" height="${H}" fill="#000"/>
-    <rect x="${PAD.left}" y="${PAD.top}" width="${(sx(poleEnd)-PAD.left).toFixed(1)}" height="${CH}" fill="${col.pole}"/>
-    <rect x="${sx(poleEnd).toFixed(1)}" y="${PAD.top}" width="${(W-PAD.right-sx(poleEnd)).toFixed(1)}" height="${CH}" fill="${col.flag}"/>
+    <!-- No zone highlights in expanded view — clean black background -->
     ${yLabels}${xLabels}${resistLines}${supportLines}${bars}${currLine}${tgtLine}${stpLine}
     <rect x="${PAD.left}" y="${PAD.top}" width="${CW}" height="${CH}" fill="none" stroke="#1e293b" stroke-width="1"/>
   </svg>`;
@@ -2923,9 +2919,7 @@ function buildExpandedChart(ticker, type, alertData) {
   return `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;display:flex;gap:12px;flex-wrap:wrap">
     <span>Price: <strong style="color:#f0b429">$${currentPrice.toFixed(2)}</strong></span>
     <span style="color:rgba(255,255,255,0.2)">|</span>
-    <span style="color:${typeAccent}">▉ Pole &nbsp;▉ Flag</span>
-    <span style="color:rgba(255,255,255,0.2)">|</span>
-    <span>🔴 Resistance &nbsp;🟢 Support &nbsp;🟡 Current</span>
+    <span>🔴 Resistance &nbsp;&nbsp;🟢 Support &nbsp;&nbsp;🟡 Current price</span>
   </div>
   ${svg}
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${levels}</div>`;
@@ -2941,10 +2935,14 @@ function openExpandedChart(ticker, type, alertData) {
   });
   if (!targetCard) return;
 
-  // Toggle expansion
+  // Close any other open charts first
+  document.querySelectorAll(".chart-expanded.open").forEach(c => c.classList.remove("open"));
+
+  // Toggle — if this one was already open it's now closed, so return
   let expandDiv = targetCard.querySelector(".chart-expanded");
-  if (expandDiv && expandDiv.classList.contains("open")) {
-    expandDiv.classList.remove("open");
+  if (expandDiv && !expandDiv.classList.contains("open") && expandDiv.innerHTML) {
+    // was just closed by above, reopen
+  } else if (expandDiv && expandDiv.classList.contains("open")) {
     return;
   }
 
