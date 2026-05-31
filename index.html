@@ -1722,6 +1722,32 @@ function renderAll() {
   renderBnH();
 }
 
+// Event delegation for sparkline expand clicks
+document.addEventListener("click", function(e) {
+  const el = e.target.closest(".spark-expand");
+  if (!el) return;
+  const ticker  = el.dataset.ticker;
+  const type    = el.dataset.type;
+  const target  = el.dataset.target;
+  const stop    = el.dataset.stop;
+  const price   = el.dataset.price;
+  openExpandedChart(ticker, type, { target, stop, price });
+});
+
+// Hover glow on sparkline
+document.addEventListener("mouseover", function(e) {
+  const el = e.target.closest(".spark-expand");
+  if (!el) return;
+  el.style.borderColor = el.dataset.accent || "var(--green2)";
+  el.style.boxShadow   = `0 0 8px ${el.dataset.accent || "var(--green2)"}40`;
+});
+document.addEventListener("mouseout", function(e) {
+  const el = e.target.closest(".spark-expand");
+  if (!el) return;
+  el.style.borderColor = "var(--border)";
+  el.style.boxShadow   = "none";
+});
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function switchTab(tab) {
   activeTab = tab;
@@ -2004,14 +2030,19 @@ function buildAlertCard(a) {
           </div>
         </div>
       </div>
-      <!-- Right: sparkline (click/hover to expand) -->
-      <div onclick="openExpandedChart('${a.ticker}','${a.type}',{target:'${a.target||""}',stop:'${a.stop||""}',price:'${a.price||""}'})"
+            <!-- Right: sparkline (click to expand) -->
+      <div class="spark-expand"
+           data-ticker="${a.ticker}"
+           data-type="${a.type}"
+           data-target="${a.target||''}"
+           data-stop="${a.stop||''}"
+           data-price="${a.price||''}"
+           data-accent="${typeAccent}"
            title="Click to expand chart"
-           style="background:#080c17;border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:80px;cursor:pointer;transition:border-color 0.15s"
-           onmouseover="this.style.borderColor='${typeAccent}'"
-           onmouseout="this.style.borderColor='var(--border)'">
+           style="background:#080c17;border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:80px;cursor:pointer;transition:border-color 0.15s;position:relative">
         ${sparkSVG}
-        <div style="position:absolute;bottom:4px;right:6px;font-size:10px;color:var(--text2);pointer-events:none">⤢</div>
+        <div style="position:absolute;bottom:4px;right:6px;font-size:11px;color:rgba(255,255,255,0.3);pointer-events:none">⤢</div>
+      </div>
       </div>
     </div>
 
