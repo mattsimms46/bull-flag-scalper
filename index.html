@@ -342,10 +342,11 @@ body {
   border-radius: 8px;
   padding: 14px 16px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.18s ease;
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
+  transform-origin: top center;
 }
 .alert-card::before {
   content: '';
@@ -906,13 +907,7 @@ body {
     </div>
   </div>
 
-  <div id="header-right">
-    <div id="market-status">
-      <div class="status-dot" id="mkt-dot"></div>
-      <span id="mkt-label">MARKET OPEN</span>
-    </div>
-    <div id="clock">--:--:-- ET</div>
-  </div>
+
 </div>
 
 <!-- ── Nav ── -->
@@ -2466,6 +2461,45 @@ function renderBnH() {
   }).join("");
 }
 
+// ── Alert Card Sparkline ──────────────────────────────────────────────────────
+// Store candle data per ticker for sparklines
+const alertCandles = {};
+
+function makeAlertSparkline(ticker, type) {
+  const candles = alertCandles[ticker];
+  if (!candles || candles.length < 5) {
+    return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:11px">No chart</div>`;
+  }
+
+  const W = 200, H = 70;
+  const prices = candles.map(c => c.close);
+  const min = Math.min(...prices), max = Math.max(...prices);
+  const rng = max - min || 1;
+  const scaleX = i => (i / (prices.length - 1)) * W;
+  const scaleY = p => H - ((p - min) / rng) * (H - 4) - 2;
+
+  const pts = prices.map((p, i) => `${scaleX(i).toFixed(1)},${scaleY(p).toFixed(1)}`).join(" ");
+
+  // Highlight colors per type
+  const colors = {
+    scalp:    { pole: "rgba(0,229,176,0.15)",   flag: "rgba(250,204,21,0.15)",  line: "#00e5b0" },
+    orb:      { pole: "rgba(76,155,232,0.15)",  flag: "rgba(167,139,250,0.15)", line: "#4c9be8" },
+    reversal: { pole: "rgba(239,83,80,0.15)",   flag: "rgba(251,146,60,0.15)",  line: "#ef5350" },
+  };
+  const col = colors[type] || colors.scalp;
+
+  // Show last 30% of candles as "flag zone" and prior as "pole zone"
+  const poleEnd = Math.floor(prices.length * 0.70);
+  const poleX   = scaleX(0), poleW = scaleX(poleEnd) - poleX;
+  const flagX   = scaleX(poleEnd), flagW = W - flagX;
+
+  return `<svg width="${W}" height="${H}" style="display:block;overflow:visible">
+    <rect x="${poleX.toFixed(1)}" y="0" width="${poleW.toFixed(1)}" height="${H}" fill="${col.pole}"/>
+    <rect x="${flagX.toFixed(1)}" y="0" width="${flagW.toFixed(1)}" height="${H}" fill="${col.flag}"/>
+    <polyline points="${pts}" fill="none" stroke="${col.line}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
 // ── Manual Scan ───────────────────────────────────────────────────────────────
 async function manualScan(type) {
   const WORKER = "https://steep-morning-ce86.mattsimms46.workers.dev";
@@ -2515,6 +2549,8 @@ async function manualScan(type) {
         const candles = json.results.map(r=>({open:r.o,close:r.c,high:r.h,low:r.l,vol:r.v,ts:r.t}));
         console.log(`${ticker}: ${candles.length} candles`);
         if (candles.length < 10) return null;
+        // Store candles for sparkline
+        alertCandles[ticker] = candles;
 
         const flag = detectManualFlag(candles, type);
         if (!flag) return null;
