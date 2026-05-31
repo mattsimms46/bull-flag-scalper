@@ -1713,13 +1713,18 @@ function renderAll() {
 document.addEventListener("click", function(e) {
   // 1. Close button clicked
   if (e.target.classList.contains("chart-close-btn")) {
-    // Hide close button
     e.target.style.display = "none";
-    // Close chart
-    const card = e.target.closest(".alert-card");
-    if (card) {
-      const chart = card.querySelector(".chart-expanded");
-      if (chart) chart.classList.remove("open");
+    // Walk up to find chart-expanded and close it
+    const chart = e.target.closest(".chart-expanded");
+    if (chart) {
+      chart.classList.remove("open");
+    } else {
+      // Button is in card footer - find chart in same card
+      const card = e.target.closest(".alert-card");
+      if (card) {
+        const c = card.querySelector(".chart-expanded");
+        if (c) c.classList.remove("open");
+      }
     }
     return;
   }
