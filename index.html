@@ -1709,37 +1709,34 @@ function renderAll() {
   renderBnH();
 }
 
-// Sparkline click — open chart
+// ── Single clean event handler for all chart interactions ────────────────────
 document.addEventListener("click", function(e) {
-  const sparkEl = e.target.closest(".spark-expand");
-  if (!sparkEl) return;
-  e.stopPropagation();
-  openExpandedChart(sparkEl.dataset.ticker, sparkEl.dataset.type, {
-    target: sparkEl.dataset.target,
-    stop:   sparkEl.dataset.stop,
-    price:  sparkEl.dataset.price,
-  });
-});
-
-// Click outside any card closes open charts
-document.addEventListener("click", function(e) {
-  if (e.target.closest(".spark-expand")) return;
-  if (e.target.closest(".chart-expanded")) return;
-  document.querySelectorAll(".chart-expanded.open").forEach(c => c.classList.remove("open"));
+  // 1. Close button clicked
+  if (e.target.classList.contains("chart-close-btn")) {
+    e.target.closest(".chart-expanded").classList.remove("open");
+    return;
+  }
+  // 2. Sparkline clicked — open chart
+  const spark = e.target.closest(".spark-expand");
+  if (spark) {
+    openExpandedChart(
+      spark.dataset.ticker,
+      spark.dataset.type,
+      { target: spark.dataset.target, stop: spark.dataset.stop, price: spark.dataset.price }
+    );
+    return;
+  }
+  // 3. Anything else — do nothing (don't auto-close)
 });
 
 // Hover glow on sparkline
 document.addEventListener("mouseover", function(e) {
   const el = e.target.closest(".spark-expand");
-  if (!el) return;
-  el.style.borderColor = el.dataset.accent || "var(--green2)";
-  el.style.boxShadow   = `0 0 8px ${el.dataset.accent || "var(--green2)"}40`;
+  if (el) { el.style.borderColor = el.dataset.accent||"var(--green2)"; }
 });
 document.addEventListener("mouseout", function(e) {
   const el = e.target.closest(".spark-expand");
-  if (!el) return;
-  el.style.borderColor = "var(--border)";
-  el.style.boxShadow   = "none";
+  if (el) { el.style.borderColor = "var(--border)"; el.style.boxShadow = "none"; }
 });
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
@@ -2935,9 +2932,8 @@ function openExpandedChart(ticker, type, alertData) {
   });
   if (!targetCard) return;
 
-  // Close any other open charts first
+  // Close all open charts first
   document.querySelectorAll(".chart-expanded.open").forEach(c => c.classList.remove("open"));
-
   let expandDiv = targetCard.querySelector(".chart-expanded");
 
   // Build chart content
@@ -2951,11 +2947,7 @@ function openExpandedChart(ticker, type, alertData) {
   }
   expandDiv.innerHTML = chartHTML;
   expandDiv.style.cssText = "background:#000 !important;border-radius:6px;padding:10px;cursor:pointer;margin-top:10px;border-top:1px solid #1e293b";
-  // Click anywhere on chart OR the X button to close
-  expandDiv.onclick = function(e) {
-    e.stopPropagation();
-    expandDiv.classList.remove("open");
-  };
+  // No inline onclick — handled by event delegation above
   expandDiv.classList.add("open");
   targetCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
