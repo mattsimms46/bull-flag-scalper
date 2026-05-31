@@ -1009,6 +1009,11 @@ body {
           <button class="filter-pill" onclick="setAlertFilter('scalp',this)">SCALP</button>
           <button class="filter-pill" onclick="setAlertFilter('orb',this)">ORB</button>
           <button class="filter-pill" onclick="setAlertFilter('reversal',this)">REVERSAL</button>
+          <div style="width:1px;height:16px;background:var(--border2);margin:0 4px"></div>
+          <button class="filter-pill" id="btn-scalp"   onclick="manualScan('scalp')"   style="color:var(--green2);border-color:var(--green2)">⚡ Scalp</button>
+          <button class="filter-pill" id="btn-orb"     onclick="manualScan('orb')"     style="color:var(--blue);border-color:var(--blue)">📐 ORB</button>
+          <button class="filter-pill" id="btn-rev"     onclick="manualScan('reversal')" style="color:var(--purple);border-color:var(--purple)">🔄 Reversal</button>
+          <button class="filter-pill" onclick="loadTestAlerts()" style="color:var(--gold);border-color:var(--gold)">⚡ Demo</button>
         </div>
       </div>
 
