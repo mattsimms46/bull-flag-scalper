@@ -1711,14 +1711,24 @@ function renderAll() {
 
 // Event delegation for sparkline expand clicks
 document.addEventListener("click", function(e) {
-  const el = e.target.closest(".spark-expand");
-  if (!el) return;
-  const ticker  = el.dataset.ticker;
-  const type    = el.dataset.type;
-  const target  = el.dataset.target;
-  const stop    = el.dataset.stop;
-  const price   = el.dataset.price;
-  openExpandedChart(ticker, type, { target, stop, price });
+  // Click on sparkline — open/close chart
+  const sparkEl = e.target.closest(".spark-expand");
+  if (sparkEl) {
+    const ticker = sparkEl.dataset.ticker;
+    const type   = sparkEl.dataset.type;
+    openExpandedChart(ticker, type, {
+      target: sparkEl.dataset.target,
+      stop:   sparkEl.dataset.stop,
+      price:  sparkEl.dataset.price,
+    });
+    return;
+  }
+  // Click anywhere on the expanded chart — close it
+  const chartEl = e.target.closest(".chart-expanded");
+  if (chartEl) {
+    chartEl.classList.remove("open");
+    return;
+  }
 });
 
 // Hover glow on sparkline
