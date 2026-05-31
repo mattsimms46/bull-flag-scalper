@@ -907,6 +907,21 @@ body {
     </div>
   </div>
 
+  <!-- Market status + bias + clock — always visible top right -->
+  <div style="display:flex;align-items:center;gap:10px;margin-left:auto;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:8px;padding:4px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px">
+      <div style="display:flex;align-items:center;gap:5px">
+        <div class="status-dot" id="mkt-dot"></div>
+        <span id="mkt-label" style="font-size:11px;color:var(--text1);font-weight:600;white-space:nowrap">—</span>
+      </div>
+      <div style="width:1px;height:12px;background:var(--border2)"></div>
+      <span id="bias-label-main" style="font-family:var(--font-display);font-weight:800;font-size:13px;color:var(--gold)">—</span>
+      <div id="bias-tickers-main" style="display:flex;gap:8px;font-size:11px"></div>
+    </div>
+    <div id="clock" style="font-size:12px;color:var(--text1);letter-spacing:0.05em;white-space:nowrap">--:--:-- ET</div>
+    <div id="flag-count"></div>
+    <span id="last-scan" style="font-size:11px;color:var(--text2)"></span>
+  </div>
 
 </div>
 
@@ -2482,9 +2497,9 @@ function makeAlertSparkline(ticker, type) {
 
   // Highlight colors per type
   const colors = {
-    scalp:    { pole: "rgba(0,229,176,0.15)",   flag: "rgba(250,204,21,0.15)",  line: "#00e5b0" },
-    orb:      { pole: "rgba(76,155,232,0.15)",  flag: "rgba(167,139,250,0.15)", line: "#4c9be8" },
-    reversal: { pole: "rgba(239,83,80,0.15)",   flag: "rgba(251,146,60,0.15)",  line: "#ef5350" },
+    scalp:    { pole: "rgba(0,229,176,0.18)",   flag: "rgba(250,204,21,0.18)",  line: "#00e5b0" },
+    orb:      { pole: "rgba(76,155,232,0.20)",  flag: "rgba(167,139,250,0.18)", line: "#4c9be8" },
+    reversal: { pole: "rgba(239,83,80,0.18)",   flag: "rgba(251,146,60,0.18)",  line: "#ef5350" },
   };
   const col = colors[type] || colors.scalp;
 
@@ -2493,10 +2508,11 @@ function makeAlertSparkline(ticker, type) {
   const poleX   = scaleX(0), poleW = scaleX(poleEnd) - poleX;
   const flagX   = scaleX(poleEnd), flagW = W - flagX;
 
-  return `<svg width="${W}" height="${H}" style="display:block;overflow:visible">
+  return `<svg width="${W}" height="${H}" style="display:block;overflow:visible;border-radius:3px">
+    <rect x="0" y="0" width="${W}" height="${H}" fill="var(--bg0)" rx="3"/>
     <rect x="${poleX.toFixed(1)}" y="0" width="${poleW.toFixed(1)}" height="${H}" fill="${col.pole}"/>
     <rect x="${flagX.toFixed(1)}" y="0" width="${flagW.toFixed(1)}" height="${H}" fill="${col.flag}"/>
-    <polyline points="${pts}" fill="none" stroke="${col.line}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <polyline points="${pts}" fill="none" stroke="${col.line}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
   </svg>`;
 }
 
