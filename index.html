@@ -1723,15 +1723,15 @@ function updateClock() {
   const h   = String(et.getHours()).padStart(2,"0");
   const m   = String(et.getMinutes()).padStart(2,"0");
   const s   = String(et.getSeconds()).padStart(2,"0");
-  document.getElementById("clock").textContent = `${h}:${m}:${s} ET`;
+  const clockEl = document.getElementById("clock"); if(clockEl) clockEl.textContent = `${h}:${m}:${s} ET`;
 
   const mins = et.getHours()*60+et.getMinutes();
   const day  = et.getDay();
   const isOpen = day>=1&&day<=5 && mins>=570&&mins<960;
   const dot  = document.getElementById("mkt-dot");
   const lbl  = document.getElementById("mkt-label");
-  dot.className  = isOpen ? "status-dot" : "status-dot closed";
-  lbl.textContent= isOpen ? "MARKET OPEN" : "MARKET CLOSED";
+  if(dot) dot.className   = isOpen ? "status-dot" : "status-dot closed";
+  if(lbl) lbl.textContent = isOpen ? "MARKET OPEN" : "MARKET CLOSED";
 
   // Scanner status dots
   const scalpActive = day>=1&&day<=5&&mins>=300&&mins<600;
@@ -1919,7 +1919,7 @@ function buildAlertCard(a) {
     <div class="meta-item"><span class="meta-label">POLE</span><span class="meta-val green">+${a.pole}%</span></div>
     <div class="meta-item"><span class="meta-label">REL VOL</span><span class="meta-val gold">${a.rvol}x</span></div>
     <div class="meta-item"><span class="meta-label">RSI(7)</span><span class="meta-val ${a.rsi>80?"red":a.rsi<20?"green":""}">${a.rsi}</span></div>
-    <div class="meta-item"><span class="meta-label">VWAP</span><span class="meta-val ${a.vwap==="above"?"green":"red"}">${a.vwap?.toUpperCase()}</span></div>
+    <div class="meta-item"><span class="meta-label">VWAP</span><span class="meta-val ${a.vwap&&a.vwap.includes("above")?"green":a.vwap?"red":""}">${a.vwap||"N/A"}</span></div>
   ` : a.type==="orb" ? `
     <div class="meta-item"><span class="meta-label">QUALITY</span><span class="meta-val ${a.orbQuality==="ELITE"?"green":"gold"}">${a.orbQuality}</span></div>
     <div class="meta-item"><span class="meta-label">ATR%</span><span class="meta-val green">${a.orbAtrPct}%</span></div>
@@ -2678,8 +2678,33 @@ function detectManualFlag(candles, type) {
 }
 
 // ── Test Mode ─────────────────────────────────────────────────────────────────
+function generateFakeCandles(seed, n=63, hasBull=false) {
+  let price = 10 + (seed % 90);
+  const candles = [];
+  let rng = seed;
+  const rand = () => { rng=(rng*1664525+1013904223)&0xffffffff; return (rng>>>0)/0xffffffff; };
+  for (let i=0; i<n; i++) {
+    const open = price;
+    const isBull = hasBull && i > n*0.55 && i < n*0.75;
+    const change = isBull ? rand()*0.025+0.01 : (rand()-0.48)*price*0.025;
+    const close = Math.max(open+change, 0.5);
+    const high = Math.max(open,close)*(1+rand()*0.01);
+    const low  = Math.min(open,close)*(1-rand()*0.01);
+    candles.push({open,close,high,low,vol:Math.floor(rand()*900000+100000)});
+    price = close;
+  }
+  return candles;
+}
+
 function loadTestAlerts() {
   const now = new Date();
+  // Pre-generate candle data for demo tickers
+  alertCandles["MARA"] = generateFakeCandles(42,  63, true);
+  alertCandles["NVDA"] = generateFakeCandles(137, 63, true);
+  alertCandles["AMD"]  = generateFakeCandles(89,  63, false);
+  alertCandles["SOFI"] = generateFakeCandles(55,  63, true);
+  alertCandles["TSLA"] = generateFakeCandles(201, 63, false);
+  alertCandles["PLTR"] = generateFakeCandles(73,  63, false);
   alerts = [
     {
       id:"t1", type:"scalp", ticker:"MARA", direction:"bull",
