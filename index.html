@@ -2483,11 +2483,16 @@ async function manualScan(type) {
 
     const results = await Promise.allSettled(slice.map(async ticker => {
       try {
-        const res  = await fetch(`${WORKER}/?ticker=${ticker}&interval=${interval}`);
+        // Worker only supports daily candles - interval handled client side
+        const res  = await fetch(`${WORKER}/?ticker=${ticker}`);
         if (!res.ok) return null;
         const json = await res.json();
-        if (!json.results?.length) return null;
+        if (!json.results?.length) {
+          console.log(`No results for ${ticker}:`, json);
+          return null;
+        }
         const candles = json.results.map(r=>({open:r.o,close:r.c,high:r.h,low:r.l,vol:r.v,ts:r.t}));
+        console.log(`${ticker}: ${candles.length} candles`);
         if (candles.length < 10) return null;
 
         const flag = detectManualFlag(candles, type);
