@@ -1713,7 +1713,14 @@ function renderAll() {
 document.addEventListener("click", function(e) {
   // 1. Close button clicked
   if (e.target.classList.contains("chart-close-btn")) {
-    e.target.closest(".chart-expanded").classList.remove("open");
+    // Hide close button
+    e.target.style.display = "none";
+    // Close chart
+    const card = e.target.closest(".alert-card");
+    if (card) {
+      const chart = card.querySelector(".chart-expanded");
+      if (chart) chart.classList.remove("open");
+    }
     return;
   }
   // 2. Sparkline clicked — open chart
@@ -2044,7 +2051,10 @@ function buildAlertCard(a) {
 
     <!-- Row 4: Footer -->
     <div style="display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid var(--border)">
-      <span style="font-size:11px;color:var(--text2)">${a.manual?"📊 Manual scan":"🔴 Live"}</span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:11px;color:var(--text2)">${a.manual?"📊 Manual scan":"🔴 Live"}</span>
+        <button class="chart-close-btn" style="display:none;background:#ef5350;color:#fff;border:none;border-radius:4px;padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body)">✕ Close Chart</button>
+      </div>
       <div class="outcome-btns">
         <button class="outcome-btn btn-win  ${a.outcome==="win" ?"active":""}" onclick="setOutcome('${a.id}','win',  this)">WIN</button>
         <button class="outcome-btn btn-loss ${a.outcome==="loss"?"active":""}" onclick="setOutcome('${a.id}','loss', this)">LOSS</button>
@@ -2914,13 +2924,10 @@ function buildExpandedChart(ticker, type, alertData) {
   ].filter(Boolean).join("");
 
   return `<div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-      <div style="font-size:11px;color:var(--text2);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <span>Price: <strong style="color:#f0b429">$${currentPrice.toFixed(2)}</strong></span>
-        <span style="opacity:0.3">|</span>
-        <span>🔴 Resistance &nbsp;🟢 Support &nbsp;🟡 Current</span>
-      </div>
-      <button class="chart-close-btn" style="background:#ef5350;color:#fff;border:none;border-radius:4px;padding:5px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body);flex-shrink:0">✕ Close</button>
+    <div style="font-size:11px;color:var(--text2);display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <span>Price: <strong style="color:#f0b429">$${currentPrice.toFixed(2)}</strong></span>
+      <span style="opacity:0.3">|</span>
+      <span>🔴 Resistance &nbsp;🟢 Support &nbsp;🟡 Current</span>
     </div>
     ${svg}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${levels}</div>
@@ -2937,8 +2944,12 @@ function openExpandedChart(ticker, type, alertData) {
   });
   if (!targetCard) return;
 
-  // Close all open charts first
-  document.querySelectorAll(".chart-expanded.open").forEach(c => c.classList.remove("open"));
+  // Close all open charts first and hide their close buttons
+  document.querySelectorAll(".chart-expanded.open").forEach(c => {
+    c.classList.remove("open");
+    const card = c.closest(".alert-card");
+    if (card) { const btn = card.querySelector(".chart-close-btn"); if(btn) btn.style.display="none"; }
+  });
   let expandDiv = targetCard.querySelector(".chart-expanded");
 
   // Build chart content
@@ -2951,9 +2962,11 @@ function openExpandedChart(ticker, type, alertData) {
     targetCard.appendChild(expandDiv);
   }
   expandDiv.innerHTML = chartHTML;
-  expandDiv.style.cssText = "background:#000 !important;border-radius:6px;padding:10px;cursor:pointer;margin-top:10px;border-top:1px solid #1e293b";
-  // No inline onclick — handled by event delegation above
+  expandDiv.style.cssText = "background:#000 !important;border-radius:6px;padding:10px;margin-top:10px;border-top:1px solid #1e293b";
   expandDiv.classList.add("open");
+  // Show the close button in the footer
+  const closeBtn = targetCard.querySelector(".chart-close-btn");
+  if (closeBtn) closeBtn.style.display = "inline-block";
   targetCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
