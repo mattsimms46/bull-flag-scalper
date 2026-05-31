@@ -1,0 +1,17 @@
+{
+  "name": "WickED Trading Intelligence",
+  "short_name": "WickED",
+  "description": "Real-time trading scanner and dashboard",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#0b0e11",
+  "theme_color": "#0b0e11",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='%230b0e11'/><rect x='84' y='48' width='24' height='96' rx='4' fill='%2326a69a'/><line x1='96' y1='20' x2='96' y2='48' stroke='%2300e5b0' stroke-width='6' stroke-linecap='round'/><line x1='96' y1='144' x2='96' y2='172' stroke='%2300e5b0' stroke-width='6' stroke-linecap='round'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
