@@ -1721,12 +1721,12 @@ document.addEventListener("click", function(e) {
   });
 });
 
-// Click anywhere on expanded chart — collapse it
+// Click outside any card closes open charts
 document.addEventListener("click", function(e) {
-  if (e.target.closest(".spark-expand")) return; // handled above
-  const openCharts = document.querySelectorAll(".chart-expanded.open");
-  openCharts.forEach(c => c.classList.remove("open"));
-}, true); // capture phase so it fires before other handlers
+  if (e.target.closest(".spark-expand")) return;
+  if (e.target.closest(".chart-expanded")) return;
+  document.querySelectorAll(".chart-expanded.open").forEach(c => c.classList.remove("open"));
+});
 
 // Hover glow on sparkline
 document.addEventListener("mouseover", function(e) {
@@ -2938,13 +2938,7 @@ function openExpandedChart(ticker, type, alertData) {
   // Close any other open charts first
   document.querySelectorAll(".chart-expanded.open").forEach(c => c.classList.remove("open"));
 
-  // Toggle — if this one was already open it's now closed, so return
   let expandDiv = targetCard.querySelector(".chart-expanded");
-  if (expandDiv && !expandDiv.classList.contains("open") && expandDiv.innerHTML) {
-    // was just closed by above, reopen
-  } else if (expandDiv && expandDiv.classList.contains("open")) {
-    return;
-  }
 
   // Build chart content
   const chartHTML = buildExpandedChart(ticker, type, alertData);
@@ -2956,6 +2950,15 @@ function openExpandedChart(ticker, type, alertData) {
     targetCard.appendChild(expandDiv);
   }
   expandDiv.innerHTML = chartHTML;
+  expandDiv.style.background = "#000";
+  expandDiv.style.borderRadius = "6px";
+  expandDiv.style.padding = "10px";
+  expandDiv.style.cursor = "pointer";
+  // Direct onclick - most reliable close method
+  expandDiv.onclick = function(e) {
+    e.stopPropagation();
+    expandDiv.classList.remove("open");
+  };
   expandDiv.classList.add("open");
   targetCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
