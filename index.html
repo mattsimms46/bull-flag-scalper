@@ -1900,82 +1900,109 @@ function renderAlerts() {
 
 function buildAlertCard(a) {
   const div = document.createElement("div");
-  const typeClass = a.type==="scalp"
-    ? (a.direction==="bull"?"bull":"bear")
-    : a.type==="orb"
-    ? (a.direction==="bull"?"orb-bull":"orb-bear")
-    : (a.direction==="bull"?"reversal-bull":"reversal-bear");
 
+  // Type accent colors matching button colors
+  const typeAccent = { scalp:"var(--green2)", orb:"var(--blue)", reversal:"var(--purple)" }[a.type] || "var(--green2)";
+  const typeAccentBg = { scalp:"rgba(0,229,176,0.05)", orb:"rgba(76,155,232,0.05)", reversal:"rgba(167,139,250,0.05)" }[a.type] || "";
+  const typeClass = a.type==="scalp" ? (a.direction==="bull"?"bull":"bear") : a.type==="orb" ? (a.direction==="bull"?"orb-bull":"orb-bear") : (a.direction==="bull"?"reversal-bull":"reversal-bear");
   const typeLabel = a.type==="scalp"?"SCALP":a.type==="orb"?"ORB":"REVERSAL";
   const typeBadge = a.type==="scalp"?"badge-scalp":a.type==="orb"?"badge-orb":"badge-reversal";
+  const stars = Array.from({length:5},(_,i)=>`<span class="star${i<(a.conviction||0)?" lit":""}">★</span>`).join("");
+  const timeStr = new Date(a.time).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit"});
 
-  const stars = Array.from({length:5},(_,i)=>`<span class="star${i<(a.conviction||0)?" lit":""}"">★</span>`).join("");
-
-  const timeStr = new Date(a.time).toLocaleTimeString("en-US",{
-    timeZone:"America/New_York",hour:"2-digit",minute:"2-digit"
-  });
-
+  // Metrics per type
   const metaHTML = a.type==="scalp" ? `
-    <div class="meta-item"><span class="meta-label">POLE</span><span class="meta-val green">+${a.pole}%</span></div>
-    <div class="meta-item"><span class="meta-label">REL VOL</span><span class="meta-val gold">${a.rvol}x</span></div>
-    <div class="meta-item"><span class="meta-label">RSI(7)</span><span class="meta-val ${a.rsi>80?"red":a.rsi<20?"green":""}">${a.rsi}</span></div>
-    <div class="meta-item"><span class="meta-label">VWAP</span><span class="meta-val ${a.vwap&&a.vwap.includes("above")?"green":a.vwap?"red":""}">${a.vwap||"N/A"}</span></div>
+    <div class="meta-item"><span class="meta-label">POLE</span><span class="meta-val green">+${a.pole||"—"}%</span></div>
+    <div class="meta-item"><span class="meta-label">REL VOL</span><span class="meta-val gold">${a.rvol||"—"}x</span></div>
+    <div class="meta-item"><span class="meta-label">RSI(7)</span><span class="meta-val ${+a.rsi>80?"red":+a.rsi<20?"green":""}">${a.rsi||"—"}</span></div>
+    <div class="meta-item"><span class="meta-label">VWAP</span><span class="meta-val">${a.vwap||"N/A"}</span></div>
   ` : a.type==="orb" ? `
-    <div class="meta-item"><span class="meta-label">QUALITY</span><span class="meta-val ${a.orbQuality==="ELITE"?"green":"gold"}">${a.orbQuality}</span></div>
-    <div class="meta-item"><span class="meta-label">ATR%</span><span class="meta-val green">${a.orbAtrPct}%</span></div>
-    <div class="meta-item"><span class="meta-label">REL VOL</span><span class="meta-val gold">${a.rvol}x</span></div>
-    <div class="meta-item"><span class="meta-label">RSI(7)</span><span class="meta-val ${a.rsi>80?"red":a.rsi<20?"green":""}">${a.rsi}</span></div>
+    <div class="meta-item"><span class="meta-label">QUALITY</span><span class="meta-val ${a.orbQuality==="ELITE"?"green":"gold"}">${a.orbQuality||"—"}</span></div>
+    <div class="meta-item"><span class="meta-label">ATR%</span><span class="meta-val green">${a.orbAtrPct||"—"}%</span></div>
+    <div class="meta-item"><span class="meta-label">REL VOL</span><span class="meta-val gold">${a.rvol||"—"}x</span></div>
+    <div class="meta-item"><span class="meta-label">RSI(7)</span><span class="meta-val ${+a.rsi>80?"red":+a.rsi<20?"green":""}">${a.rsi||"—"}</span></div>
   ` : `
-    <div class="meta-item"><span class="meta-label">CANDLE</span><span class="meta-val">${a.candleType}</span></div>
-    <div class="meta-item"><span class="meta-label">REL VOL</span><span class="meta-val gold">${a.rvol}x</span></div>
-    <div class="meta-item"><span class="meta-label">RSI(7)</span><span class="meta-val ${+a.rsi>80?"red":+a.rsi<20?"green":""}">${a.rsi}</span></div>
-    <div class="meta-item"><span class="meta-label">S/R LEVEL</span><span class="meta-val blue" style="font-size: 11px">${a.srLevel||"—"}</span></div>
+    <div class="meta-item"><span class="meta-label">CANDLE</span><span class="meta-val">${a.candleType||"—"}</span></div>
+    <div class="meta-item"><span class="meta-label">REL VOL</span><span class="meta-val gold">${a.rvol||"—"}x</span></div>
+    <div class="meta-item"><span class="meta-label">RSI(7)</span><span class="meta-val ${+a.rsi>80?"red":+a.rsi<20?"green":""}">${a.rsi||"—"}</span></div>
+    <div class="meta-item"><span class="meta-label">S/R LEVEL</span><span class="meta-val" style="font-size:11px">${a.srLevel||"—"}</span></div>
   `;
 
-  const outcomeClass = a.outcome || "";
+  // Build sparkline SVG
+  const candles = alertCandles[a.ticker];
+  let sparkSVG = `<div style="color:var(--text2);font-size:11px;text-align:center">No chart data</div>`;
+  if (candles && candles.length >= 5) {
+    const W=180, H=72;
+    const prices = candles.map(c=>c.close);
+    const mn=Math.min(...prices), mx=Math.max(...prices), rng=mx-mn||1;
+    const sx = i => (i/(prices.length-1))*W;
+    const sy = p => H-((p-mn)/rng)*(H-4)-2;
+    const pts = prices.map((p,i)=>`${sx(i).toFixed(1)},${sy(p).toFixed(1)}`).join(" ");
+    const poleEnd = Math.floor(prices.length*0.70);
+    const col = {
+      scalp:    {pole:"rgba(0,229,176,0.20)",   flag:"rgba(250,204,21,0.20)",  line:"#00e5b0"},
+      orb:      {pole:"rgba(76,155,232,0.22)",  flag:"rgba(167,139,250,0.20)", line:"#4c9be8"},
+      reversal: {pole:"rgba(239,83,80,0.20)",   flag:"rgba(251,146,60,0.20)",  line:"#ef5350"},
+    }[a.type] || {pole:"rgba(0,229,176,0.20)",flag:"rgba(250,204,21,0.20)",line:"#00e5b0"};
+    sparkSVG = `<svg width="${W}" height="${H}" style="display:block">
+      <rect x="0" y="0" width="${W}" height="${H}" fill="#080c17" rx="3"/>
+      <rect x="0" y="0" width="${(sx(poleEnd)).toFixed(1)}" height="${H}" fill="${col.pole}"/>
+      <rect x="${(sx(poleEnd)).toFixed(1)}" y="0" width="${(W-sx(poleEnd)).toFixed(1)}" height="${H}" fill="${col.flag}"/>
+      <polyline points="${pts}" fill="none" stroke="${col.line}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>`;
+  }
+
   div.className = `alert-card ${typeClass}`;
+  div.style.cssText += `border-left:3px solid ${typeAccent};background:var(--bg1);`;
+
   div.innerHTML = `
-    <!-- Row 1: Ticker + type + direction + copy + stars -->
+    <!-- Row 1: Header -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span class="alert-ticker">${a.ticker}</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="alert-ticker" style="color:${typeAccent}">${a.ticker}</span>
         <span class="alert-type-badge ${typeBadge}">${typeLabel}</span>
-        <span style="font-size:11px;font-weight:700;color:${a.direction==="bull"?"var(--green2)":"var(--red2)"}">
-          ${a.direction==="bull"?"▲ LONG":"▼ SHORT"}
-        </span>
-        <button onclick="copyTicker('${a.ticker}', event)" title="Copy ${a.ticker} to clipboard" style="
-          background:rgba(255,255,255,0.06);border:1px solid var(--border2);
-          border-radius:4px;color:var(--text2);padding:3px 8px;font-size:11px;
-          cursor:pointer;font-family:var(--font-body);
-        ">📋 Copy</button>
+        <span style="font-size:11px;font-weight:700;color:${a.direction==="bull"?"var(--green2)":"var(--red2)"}">${a.direction==="bull"?"▲ LONG":"▼ SHORT"}</span>
+        <button onclick="copyTicker('${a.ticker}',event)" style="background:rgba(255,255,255,0.06);border:1px solid var(--border2);border-radius:4px;color:var(--text2);padding:2px 8px;font-size:11px;cursor:pointer;font-family:var(--font-body)">📋</button>
       </div>
-      <div class="conviction">${stars}</div>
-    </div>
-
-    <!-- Row 2: Price / Target / Stop — large and clear -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 10px">
-        <div style="font-size: 11px;color:var(--text2);letter-spacing:0.08em;margin-bottom:3px">PRICE</div>
-        <div style="font-size:20px;font-weight:800;color:var(--text0);font-family:var(--font-display)">$${a.price||"—"}</div>
-      </div>
-      <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);border-radius:6px;padding:8px 10px">
-        <div style="font-size: 11px;color:var(--green2);letter-spacing:0.08em;margin-bottom:3px">🎯 TARGET</div>
-        <div style="font-size:20px;font-weight:800;color:var(--green2);font-family:var(--font-display)">$${a.target||"—"}</div>
-      </div>
-      <div style="background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.25);border-radius:6px;padding:8px 10px">
-        <div style="font-size: 11px;color:var(--red2);letter-spacing:0.08em;margin-bottom:3px">🛑 STOP</div>
-        <div style="font-size:20px;font-weight:800;color:var(--red2);font-family:var(--font-display)">$${a.stop||"—"}</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="conviction">${stars}</div>
+        <span style="font-size:11px;color:var(--text2)">⏰ ${timeStr}</span>
       </div>
     </div>
 
-    <!-- Row 3: All metrics -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
+    <!-- Row 2: Price/Target/Stop (left half) + Sparkline (right half) -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;align-items:stretch">
+      <!-- Left: compact price boxes side by side -->
+      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:6px 4px;text-align:center">
+            <span style="font-size:11px;color:var(--text2);margin-bottom:2px">PRICE</span>
+            <span style="font-size:14px;font-weight:800;color:var(--text0);font-family:var(--font-display)">$${a.price||"—"}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:4px;padding:6px 4px;text-align:center">
+            <span style="font-size:11px;color:var(--green2);margin-bottom:2px">🎯 TARGET</span>
+            <span style="font-size:14px;font-weight:800;color:var(--green2);font-family:var(--font-display)">$${a.target||"—"}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.2);border-radius:4px;padding:6px 4px;text-align:center">
+            <span style="font-size:11px;color:var(--red2);margin-bottom:2px">🛑 STOP</span>
+            <span style="font-size:14px;font-weight:800;color:var(--red2);font-family:var(--font-display)">$${a.stop||"—"}</span>
+          </div>
+        </div>
+      </div>
+      <!-- Right: sparkline -->
+      <div style="background:#080c17;border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:80px">
+        ${sparkSVG}
+      </div>
+    </div>
+
+    <!-- Row 3: Metrics -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px">
       ${metaHTML}
     </div>
 
-    <!-- Row 4: Time + outcome buttons -->
+    <!-- Row 4: Footer -->
     <div style="display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid var(--border)">
-      <span style="font-size: 11px;color:var(--text2)">⏰ ${timeStr} ET${a.manual?' · Manual scan':''}</span>
+      <span style="font-size:11px;color:var(--text2)">${a.manual?"📊 Manual scan":"🔴 Live"}</span>
       <div class="outcome-btns">
         <button class="outcome-btn btn-win  ${a.outcome==="win" ?"active":""}" onclick="setOutcome('${a.id}','win',  this)">WIN</button>
         <button class="outcome-btn btn-loss ${a.outcome==="loss"?"active":""}" onclick="setOutcome('${a.id}','loss', this)">LOSS</button>
@@ -1985,6 +2012,7 @@ function buildAlertCard(a) {
   `;
   return div;
 }
+
 
 function setAlertFilter(f, el) {
   alertFilter = f;
