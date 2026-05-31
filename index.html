@@ -6,6 +6,11 @@
 <title>WickED — Trading Intelligence</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="manifest" href="/manifest.json"/>
+<meta name="theme-color" content="#0b0e11"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="WickED"/>
 <style>
 /* ── Reset & Variables ──────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2639,8 +2644,15 @@ async function manualScan(type) {
 
     const results = await Promise.allSettled(slice.map(async ticker => {
       try {
-        // Worker only supports daily candles - interval handled client side
-        const res  = await fetch(`${WORKER}/?ticker=${ticker}`);
+        // Fetch appropriate candle timeframe
+        const isMarket = (() => {
+          const et = new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"}));
+          const m = et.getHours()*60+et.getMinutes();
+          return et.getDay()>=1&&et.getDay()<=5&&m>=570&&m<960;
+        })();
+        // Use 5min multiplier for intraday (passes through to Polygon via worker)
+        const candleParam = (type==="scalp"&&isMarket) ? "&multiplier=5&timespan=minute" : "&multiplier=1&timespan=day";
+        const res = await fetch(`${WORKER}/?ticker=${ticker}${candleParam}`);
         if (!res.ok) return null;
         const json = await res.json();
         if (!json.results?.length) {
@@ -2989,13 +3001,19 @@ setInterval(updateClock, 1000);
 fetchMarketBias();
 setInterval(fetchMarketBias, 5*60*1000);
 updateAllocations();
-// Pull from Railway on load, then poll every 30s for new alerts
 pullData().then(() => {
-  if (!alerts.length) addDemoAlerts(); // show demo if no real data yet
+  if (!alerts.length) addDemoAlerts();
 });
 setInterval(pullData, 30*1000);
 fetchBnHPrices();
 setInterval(fetchBnHPrices, 10*60*1000);
+
+// Register PWA service worker
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").then(() => {
+    console.log("WickED PWA ready");
+  }).catch(() => {});
+}
 </script>
 </body>
 </html>
