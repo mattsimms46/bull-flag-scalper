@@ -2904,7 +2904,7 @@ function buildExpandedChart(ticker, type, alertData) {
 
   const svg=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
     <rect width="${W}" height="${H}" fill="#000"/>
-    <!-- No zone highlights in expanded view — clean black background -->
+
     ${yLabels}${xLabels}${resistLines}${supportLines}${bars}${currLine}${tgtLine}${stpLine}
     <rect x="${PAD.left}" y="${PAD.top}" width="${CW}" height="${CH}" fill="none" stroke="#1e293b" stroke-width="1"/>
   </svg>`;
@@ -2950,11 +2950,8 @@ function openExpandedChart(ticker, type, alertData) {
     targetCard.appendChild(expandDiv);
   }
   expandDiv.innerHTML = chartHTML;
-  expandDiv.style.background = "#000";
-  expandDiv.style.borderRadius = "6px";
-  expandDiv.style.padding = "10px";
-  expandDiv.style.cursor = "pointer";
-  // Direct onclick - most reliable close method
+  expandDiv.style.cssText = "background:#000 !important;border-radius:6px;padding:10px;cursor:pointer;margin-top:10px;border-top:1px solid #1e293b";
+  // Click anywhere on chart OR the X button to close
   expandDiv.onclick = function(e) {
     e.stopPropagation();
     expandDiv.classList.remove("open");
