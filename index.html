@@ -330,21 +330,22 @@ body {
 #alert-stream {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .alert-card {
   background: var(--bg1);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 14px 16px;
   cursor: pointer;
   transition: all 0.15s;
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 .alert-card::before {
   content: '';
@@ -394,7 +395,7 @@ body {
   margin-bottom: 6px;
 }
 
-.meta-item { display: flex; flex-direction: column; gap: 1px; }
+.meta-item { display: flex; flex-direction: column; gap: 1px; background:var(--bg2); border-radius:4px; padding:6px 8px; }
 .meta-label { font-size: 11px; color: var(--text2); letter-spacing: 0.06em; }
 .meta-val   { font-size: 11px; font-weight: 700; color: var(--text0); }
 .meta-val.green  { color: var(--green2); }
@@ -982,25 +983,6 @@ body {
 
     <!-- LIVE ALERTS -->
     <div class="tab-panel active" id="panel-alerts">
-
-      <!-- Market Bias Bar -->
-      <div id="bias-bar" style="
-        display:flex; align-items:center; gap:16px;
-        padding:8px 16px;
-        background:var(--bg2);
-        border-bottom:1px solid var(--border2);
-        flex-shrink:0;
-        flex-wrap:wrap;
-      ">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:10px;color:var(--text2);font-family:var(--font-display);font-weight:700;letter-spacing:0.1em;text-transform:uppercase">Market Bias</span>
-          <span id="bias-label-main" style="font-family:var(--font-display);font-weight:800;font-size:14px;color:var(--gold)">LOADING…</span>
-        </div>
-        <div id="bias-tickers-main" style="display:flex;gap:14px;font-size:12px;color:var(--text1);flex-wrap:wrap"></div>
-        <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
-          <span style="font-size:11px;color:var(--text2)" id="bias-vwap-main"></span>
-        </div>
-      </div>
 
       <div class="panel-header">
         <span class="panel-title">Live Alert Stream</span>
@@ -1827,7 +1809,7 @@ async function fetchMarketBias() {
     if (biasTickers) biasTickers.innerHTML = details.map(d=>
       `<span style="color:${d.includes("+")?"var(--green2)":"var(--red2)"}">${d}</span>`
     ).join("");
-    if (biasVwap) biasVwap.textContent = biasScore>=2?"Both above VWAP ✓":biasScore<=-2?"Both below VWAP":"Mixed VWAP signals";
+    const biasVwapEl = document.getElementById("bias-vwap-main"); if (biasVwapEl) biasVwapEl.textContent = biasScore>=2?"Both above VWAP ✓":biasScore<=-2?"Both below VWAP":"Mixed VWAP signals";
 
   } catch(e) {
     document.getElementById("bias-label").textContent = "UNAVAILABLE";
@@ -1943,32 +1925,47 @@ function buildAlertCard(a) {
   const outcomeClass = a.outcome || "";
   div.className = `alert-card ${typeClass}`;
   div.innerHTML = `
-    <div class="alert-top">
-      <div style="display:flex;align-items:center;gap:8px">
+    <!-- Row 1: Ticker + type + direction + copy + stars -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span class="alert-ticker">${a.ticker}</span>
         <span class="alert-type-badge ${typeBadge}">${typeLabel}</span>
-        <span style="font-size:10px;color:${a.direction==="bull"?"var(--green2)":"var(--red2)"}">
+        <span style="font-size:11px;font-weight:700;color:${a.direction==="bull"?"var(--green2)":"var(--red2)"}">
           ${a.direction==="bull"?"▲ LONG":"▼ SHORT"}
         </span>
-        <button onclick="copyTicker('${a.ticker}', event)" title="Copy ticker" style="
-          background:rgba(255,255,255,0.08);border:1px solid var(--border2);
-          border-radius:4px;color:var(--text2);padding:2px 7px;font-size:10px;
-          cursor:pointer;font-family:var(--font-body);transition:all 0.1s;
-        " onmouseover="this.style.color='var(--green2)';this.style.borderColor='var(--green2)'"
-           onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border2)'">
-          📋
-        </button>
+        <button onclick="copyTicker('${a.ticker}', event)" title="Copy ${a.ticker} to clipboard" style="
+          background:rgba(255,255,255,0.06);border:1px solid var(--border2);
+          border-radius:4px;color:var(--text2);padding:3px 8px;font-size:11px;
+          cursor:pointer;font-family:var(--font-body);
+        ">📋 Copy</button>
       </div>
       <div class="conviction">${stars}</div>
     </div>
-    <div class="alert-meta">${metaHTML}</div>
-    <div style="display:flex;gap:12px;font-size:10px;margin-bottom:6px">
-      <span style="color:var(--text2)">Price: <strong style="color:var(--text0)">$${a.price}</strong></span>
-      <span style="color:var(--text2)">Target: <strong style="color:var(--green2)">$${a.target}</strong></span>
-      <span style="color:var(--text2)">Stop: <strong style="color:var(--red2)">$${a.stop}</strong></span>
+
+    <!-- Row 2: Price / Target / Stop — large and clear -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 10px">
+        <div style="font-size:10px;color:var(--text2);letter-spacing:0.08em;margin-bottom:3px">PRICE</div>
+        <div style="font-size:20px;font-weight:800;color:var(--text0);font-family:var(--font-display)">$${a.price||"—"}</div>
+      </div>
+      <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);border-radius:6px;padding:8px 10px">
+        <div style="font-size:10px;color:var(--green2);letter-spacing:0.08em;margin-bottom:3px">🎯 TARGET</div>
+        <div style="font-size:20px;font-weight:800;color:var(--green2);font-family:var(--font-display)">$${a.target||"—"}</div>
+      </div>
+      <div style="background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.25);border-radius:6px;padding:8px 10px">
+        <div style="font-size:10px;color:var(--red2);letter-spacing:0.08em;margin-bottom:3px">🛑 STOP</div>
+        <div style="font-size:20px;font-weight:800;color:var(--red2);font-family:var(--font-display)">$${a.stop||"—"}</div>
+      </div>
     </div>
-    <div class="alert-bottom">
-      <span class="alert-time">⏰ ${timeStr} ET</span>
+
+    <!-- Row 3: All metrics -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
+      ${metaHTML}
+    </div>
+
+    <!-- Row 4: Time + outcome buttons -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid var(--border)">
+      <span style="font-size:10px;color:var(--text2)">⏰ ${timeStr} ET${a.manual?' · Manual scan':''}</span>
       <div class="outcome-btns">
         <button class="outcome-btn btn-win  ${a.outcome==="win" ?"active":""}" onclick="setOutcome('${a.id}','win',  this)">WIN</button>
         <button class="outcome-btn btn-loss ${a.outcome==="loss"?"active":""}" onclick="setOutcome('${a.id}','loss', this)">LOSS</button>
