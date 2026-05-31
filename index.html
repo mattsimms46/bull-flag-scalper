@@ -2940,36 +2940,43 @@ function buildExpandedChart(ticker, type, alertData) {
 }
 
 function openExpandedChart(ticker, type, alertData) {
-  // Find the card with this ticker
+  // Find the alert card
   const cards = document.querySelectorAll(".alert-card");
   let targetCard = null;
   cards.forEach(card => {
-    const tickerEl = card.querySelector(".alert-ticker");
-    if (tickerEl && tickerEl.textContent.trim() === ticker) targetCard = card;
+    const el = card.querySelector(".alert-ticker");
+    if (el && el.textContent.trim() === ticker) targetCard = card;
   });
   if (!targetCard) return;
 
-  // Close any open chart first
-  closeOpenChart();
-  let expandDiv = targetCard.querySelector(".chart-expanded");
+  // If already open - just remove the expanded div entirely and return
+  const existing = targetCard.querySelector(".chart-expanded");
+  if (existing) {
+    existing.parentNode.removeChild(existing);
+    return;
+  }
 
-  // Build chart content
+  // Build chart
   const chartHTML = buildExpandedChart(ticker, type, alertData);
   if (!chartHTML) { showToast("No chart data for " + ticker); return; }
 
-  if (!expandDiv) {
-    expandDiv = document.createElement("div");
-    expandDiv.className = "chart-expanded";
-    targetCard.appendChild(expandDiv);
-  }
-  expandDiv.innerHTML = chartHTML;
-  expandDiv.style.cssText = "background:#000;border-radius:6px;padding:10px;margin-top:10px;border-top:1px solid #1e293b;display:block";
-  // Store direct reference
-  openChartDiv = expandDiv;
-  // Show the close button in the footer
-  const closeBtn = targetCard.querySelector(".chart-close-btn");
-  if (closeBtn) closeBtn.style.display = "inline-block";
-  targetCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  // Create div, append to card
+  const div = document.createElement("div");
+  div.className = "chart-expanded";
+  div.style.cssText = "background:#000;border-radius:6px;padding:10px;margin-top:10px;border-top:1px solid #1e293b;animation:slideDown 0.2s ease";
+  div.innerHTML = chartHTML;
+
+  // Add close button that removes the div
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "✕ Close Chart";
+  closeBtn.style.cssText = "margin-top:8px;background:#ef5350;color:#fff;border:none;border-radius:4px;padding:5px 16px;font-size:12px;font-weight:700;cursor:pointer;width:100%";
+  closeBtn.onclick = function() {
+    div.parentNode.removeChild(div);
+  };
+  div.appendChild(closeBtn);
+
+  targetCard.appendChild(div);
+  targetCard.scrollIntoView({ behavior:"smooth", block:"nearest" });
 }
 
 function closeChartOverlay() {}
