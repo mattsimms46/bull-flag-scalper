@@ -2913,13 +2913,18 @@ function buildExpandedChart(ticker, type, alertData) {
     stp?`<span class="level-pill level-resistance">🛑 $${stp}</span>`:"",
   ].filter(Boolean).join("");
 
-  return `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;display:flex;gap:12px;flex-wrap:wrap">
-    <span>Price: <strong style="color:#f0b429">$${currentPrice.toFixed(2)}</strong></span>
-    <span style="color:rgba(255,255,255,0.2)">|</span>
-    <span>🔴 Resistance &nbsp;&nbsp;🟢 Support &nbsp;&nbsp;🟡 Current price</span>
-  </div>
-  ${svg}
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${levels}</div>`;
+  return `<div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="font-size:11px;color:var(--text2);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span>Price: <strong style="color:#f0b429">$${currentPrice.toFixed(2)}</strong></span>
+        <span style="opacity:0.3">|</span>
+        <span>🔴 Resistance &nbsp;🟢 Support &nbsp;🟡 Current</span>
+      </div>
+      <button class="chart-close-btn" style="background:#ef5350;color:#fff;border:none;border-radius:4px;padding:5px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body);flex-shrink:0">✕ Close</button>
+    </div>
+    ${svg}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${levels}</div>
+  </div>`;
 }
 
 function openExpandedChart(ticker, type, alertData) {
