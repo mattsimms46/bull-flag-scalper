@@ -371,22 +371,25 @@ function detectScalpFlag(ticker) {
 
 function formatScalpAlert(f) {
   const time = new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" });
-  const vwapLine = f.vwap ? `${f.vwapInfo.emoji} VWAP:   $${f.vwap} (${f.vwapInfo.label})` : "";
-  return `🚨 <b>BULL FLAG — ${f.ticker}</b>
-⏰ ${time} ET  |  ${biasEmoji()} ${marketBias}
-
-💰 Price:   $${f.currentPrice}
-📈 Pole:    +${f.poleGain}% (${f.poleBars} bars)
-🏁 Flag:    ${f.flagBars} bars · ${f.flagRange}% range
-⚡ Rel Vol: ${f.rVol}x average
-📊 Float:   ${f.float}
-📐 Spread:  ~${f.spreadPct}%
-${vwapLine}
-
-🎯 Target: $${f.breakoutTarget}
-🛑 Stop:   $${f.stopLoss}
-
-<i>1-min scalp · NASDAQ · 5am–10am ET</i>`;
+  const vwapLine = f.vwap ? `${f.vwapInfo.emoji} VWAP: $${f.vwap} (${f.vwapInfo.label})` : "";
+  const lines = [
+    `🚨 <b>BULL FLAG - ${f.ticker}</b>`,
+    `⏰ ${time} ET | ${biasEmoji()} ${marketBias}`,
+    ``,
+    `💰 Price: $${f.currentPrice}`,
+    `📈 Pole: +${f.poleGain}% (${f.poleBars} bars)`,
+    `🏁 Flag: ${f.flagBars} bars, ${f.flagRange}% range`,
+    `⚡ Rel Vol: ${f.rVol}x`,
+    `📊 Float: ${f.float}`,
+    vwapLine,
+    ``,
+    `🎯 Target: $${f.breakoutTarget}`,
+    `🛑 Stop: $${f.stopLoss}`,
+    ``,
+    `<i>1-min scalp</i>`,
+  ].filter(l => l !== undefined && !(l === "" && false));
+  return lines.join("
+");
 }
 
 function connectScalpWS(tickers) {
@@ -553,8 +556,8 @@ function formatRevAlert(r) {
   const nearbyLevels = r.srLevels.filter(l => Math.abs(l.price - parseFloat(r.currentPrice)) / parseFloat(r.currentPrice) < 0.03)
     .sort((a, b) => Math.abs(a.price - parseFloat(r.currentPrice)) - Math.abs(b.price - parseFloat(r.currentPrice)))
     .slice(0, 3).map(l => `  ${l.type === "resistance" ? "🔴 R" : "🟢 S"} $${l.price.toFixed(2)}`).join("\n") || "  None within 3%";
-  return `${r.emoji} <b>${r.direction} — ${r.ticker}</b>
-⏰ ${time} ET  |  ${biasEmoji()} ${marketBias}
+  return `${r.emoji} <b>${r.direction} - ${r.ticker}</b>
+⏰ ${time} ET | ${biasEmoji()} ${marketBias}
 
 💰 Price: $${r.currentPrice}
 📊 RSI(7): ${r.rsi ?? "N/A"} ${r.rsiStars}
@@ -708,7 +711,7 @@ function processOrbBar(ticker, bar) {
       const breakPct = ((bar.close - orb.high) / orb.high * 100).toFixed(2);
       const tgt1 = (orb.high + orb.orbRange).toFixed(2), tgt2 = (orb.high + orb.orbRange * 2).toFixed(2), stop = (orb.high * 0.995).toFixed(2);
       const biasNote = marketBias === "BULLISH" ? "✅ Bullish bias — high conviction" : marketBias === "BEARISH" ? "⚠️ Bearish day — reduce size" : "🟡 Choppy — wait for confirmation";
-      sendTelegram(`🚀 <b>ORB BULLISH BREAKOUT — ${ticker}</b>
+      sendTelegram(`🚀 <b>ORB BULLISH BREAKOUT - ${ticker}</b>
 ⏰ ${new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} ET
 
 💰 Price: $${bar.close.toFixed(2)}
@@ -735,7 +738,7 @@ ${biasEmoji()} ${biasNote}
       const breakPct = ((orb.low - bar.close) / orb.low * 100).toFixed(2);
       const tgt1 = (orb.low - orb.orbRange).toFixed(2), tgt2 = (orb.low - orb.orbRange * 2).toFixed(2), stop = (orb.low * 1.005).toFixed(2);
       const biasNote = marketBias === "BEARISH" ? "✅ Bearish bias — high conviction" : marketBias === "BULLISH" ? "⚠️ Bullish day — reduce size" : "🟡 Choppy — wait for confirmation";
-      sendTelegram(`🔻 <b>ORB BEARISH BREAKDOWN — ${ticker}</b>
+      sendTelegram(`🔻 <b>ORB BEARISH BREAKDOWN - ${ticker}</b>
 ⏰ ${new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} ET
 
 💰 Price: $${bar.close.toFixed(2)}
@@ -908,7 +911,7 @@ ${marketBias === "BULLISH" ? "→ Favor long ORB setups" : marketBias === "BEARI
     // Conviction breakdown
     const highConv = todayAlerts.filter(a => (a.conviction || 0) >= 4).length;
 
-    sendTelegram(`📋 <b>Daily Recap — ${new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", month: "short", day: "numeric" })}</b>
+    sendTelegram(`📋 <b>Daily Recap - ${new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", month: "short", day: "numeric" })}</b>
 
 ${biasEmoji()} Market Bias: <b>${marketBias}</b>
 
