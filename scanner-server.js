@@ -1,4 +1,4 @@
-// ─── WickED Scanner Server — All-in-one ──────────────────────────────────────
+// ─── WickED Scanner Server - All-in-one ──────────────────────────────────────
 // Scalp + ORB + Reversal + API + Daily Recap + Wind-down + Gap Alert
 const https = require("https");
 const http  = require("http");
@@ -25,14 +25,45 @@ process.on("unhandledRejection", r => log(`Unhandled: ${r}`));
 
 // ── Telegram ──────────────────────────────────────────────────────────────────
 function sendTelegram(text) {
-  const body = JSON.stringify({ chat_id: TELEGRAM_CHAT, text, parse_mode: "HTML" });
+  // Strip any problematic chars
+  const cleanText = text.replace(/[^�-]/g, c => c); // keep unicode but log issues
+  const body = JSON.stringify({ chat_id: TELEGRAM_CHAT, text: cleanText, parse_mode: "HTML" });
   const opts = {
     hostname: "api.telegram.org",
     path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
     method: "POST",
     headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) }
   };
-  const req = https.request(opts, res => { if (res.statusCode !== 200) log(`Telegram ${res.statusCode}`); });
+  const req = https.request(opts, res => {
+    let d = "";
+    res.on("data", c => d += c);
+    res.on("end", () => {
+      if (res.statusCode !== 200) {
+        log(`Telegram ${res.statusCode}: ${d.slice(0, 200)}`);
+      }
+    });
+  });
+  req.on("error", e => log(`Telegram: ${e.message}`));
+  req.write(body); req.end();
+}
+
+function sendTelegramPlain(text) {
+  // No parse_mode - plain text only, most reliable
+  const body = JSON.stringify({ chat_id: TELEGRAM_CHAT, text });
+  const opts = {
+    hostname: "api.telegram.org",
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) }
+  };
+  const req = https.request(opts, res => {
+    let d = "";
+    res.on("data", c => d += c);
+    res.on("end", () => {
+      if (res.statusCode !== 200) log(`Telegram plain ${res.statusCode}: ${d.slice(0, 200)}`);
+      else log("Telegram plain: sent OK");
+    });
+  });
   req.on("error", e => log(`Telegram: ${e.message}`));
   req.write(body); req.end();
 }
@@ -261,7 +292,7 @@ async function sendGapScanner() {
     });
 
     if (!gaps.length) {
-      sendTelegram(`📊 <b>Gap Scanner — 8:30am ET</b>\nNo significant gaps today (≥3%)\n\n${biasEmoji()} Market Bias: <b>${marketBias}</b>`);
+      sendTelegram(`📊 <b>Gap Scanner - 8:30am ET</b>\nNo significant gaps today (≥3%)\n\n${biasEmoji()} Market Bias: <b>${marketBias}</b>`);
       return;
     }
 
@@ -273,7 +304,7 @@ async function sendGapScanner() {
       return `${emoji} <b>${g.ticker}</b> ${g.gapDir} ${g.gapPct > 0 ? "+" : ""}${g.gapPct}%  |  Open: $${g.openPrice}  |  Prev: $${g.prevClose}`;
     }).join("\n");
 
-    sendTelegram(`📊 <b>Gap Scanner — 8:30am ET</b>\n${biasEmoji()} Market Bias: <b>${marketBias}</b>\n\n${lines}\n\n<i>Watch these for ORB setups at 9:30 · Range locks 9:40</i>`);
+    sendTelegram(`📊 <b>Gap Scanner - 8:30am ET</b>\n${biasEmoji()} Market Bias: <b>${marketBias}</b>\n\n${lines}\n\n<i>Watch these for ORB setups at 9:30 · Range locks 9:40</i>`);
     log(`Gap scanner: found ${gaps.length} gaps, sent top ${top.length}`);
   } catch(e) { log(`Gap scanner error: ${e.message}`); }
 }
@@ -400,7 +431,7 @@ function connectScalpWS(tickers) {
     msgs.forEach(msg => {
       if (msg.ev === "status") {
         if (msg.status === "auth_success") {
-          log("Scalp WS auth — subscribing...");
+          log("Scalp WS auth - subscribing...");
           for (let i = 0; i < tickers.length; i += 50)
             scalpWS.send(JSON.stringify({ action: "subscribe", params: tickers.slice(i, i+50).map(t => `AM.${t}`).join(",") }));
           sendTelegram(`✅ <b>Bull Flag Scalper ACTIVE</b>\n${biasEmoji()} Market: <b>${marketBias}</b>\nScanning ${tickers.length} tickers · $${MIN_PRICE}–$${MAX_PRICE} · ${MIN_RVOL}x min rvol`);
@@ -569,8 +600,8 @@ function formatRevAlert(r) {
 
 🗓 PDH: $${r.prevHigh ?? "N/A"}  PDL: $${r.prevLow ?? "N/A"}  PDC: $${r.prevClose ?? "N/A"}
 
-${marketBias === "BULLISH" && r.direction.includes("BEARISH") ? "⚠️ Counter-trend on bullish day — trade smaller" : ""}
-${marketBias === "BEARISH" && r.direction.includes("BULLISH") ? "⚠️ Counter-trend on bearish day — trade smaller" : ""}
+${marketBias === "BULLISH" && r.direction.includes("BEARISH") ? "⚠️ Counter-trend on bullish day - trade smaller" : ""}
+${marketBias === "BEARISH" && r.direction.includes("BULLISH") ? "⚠️ Counter-trend on bearish day - trade smaller" : ""}
 <i>5-min · First hour · Confirm before entry</i>`;
 }
 
@@ -583,7 +614,7 @@ function connectRevWS(tickers) {
     msgs.forEach(msg => {
       if (msg.ev === "status") {
         if (msg.status === "auth_success") {
-          log("Rev WS auth — subscribing...");
+          log("Rev WS auth - subscribing...");
           for (let i = 0; i < tickers.length; i += 50)
             revWS.send(JSON.stringify({ action: "subscribe", params: tickers.slice(i, i+50).map(t => `AM.${t}`).join(",") }));
           sendTelegram(`🔄 <b>Reversal Scanner ACTIVE</b>\n${biasEmoji()} ${marketBias}\n${tickers.length} tickers · 5-min · 9:30–10:30am ET`);
@@ -709,7 +740,7 @@ function processOrbBar(ticker, bar) {
       orbAlerted.add(ticker);
       const breakPct = ((bar.close - orb.high) / orb.high * 100).toFixed(2);
       const tgt1 = (orb.high + orb.orbRange).toFixed(2), tgt2 = (orb.high + orb.orbRange * 2).toFixed(2), stop = (orb.high * 0.995).toFixed(2);
-      const biasNote = marketBias === "BULLISH" ? "✅ Bullish bias — high conviction" : marketBias === "BEARISH" ? "⚠️ Bearish day — reduce size" : "🟡 Choppy — wait for confirmation";
+      const biasNote = marketBias === "BULLISH" ? "✅ Bullish bias - high conviction" : marketBias === "BEARISH" ? "⚠️ Bearish day - reduce size" : "🟡 Choppy - wait for confirmation";
       sendTelegram(`🚀 <b>ORB BULLISH BREAKOUT - ${ticker}</b>
 ⏰ ${new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} ET
 
@@ -736,7 +767,7 @@ ${biasEmoji()} ${biasNote}
       orbAlerted.add(ticker);
       const breakPct = ((orb.low - bar.close) / orb.low * 100).toFixed(2);
       const tgt1 = (orb.low - orb.orbRange).toFixed(2), tgt2 = (orb.low - orb.orbRange * 2).toFixed(2), stop = (orb.low * 1.005).toFixed(2);
-      const biasNote = marketBias === "BEARISH" ? "✅ Bearish bias — high conviction" : marketBias === "BULLISH" ? "⚠️ Bullish day — reduce size" : "🟡 Choppy — wait for confirmation";
+      const biasNote = marketBias === "BEARISH" ? "✅ Bearish bias - high conviction" : marketBias === "BULLISH" ? "⚠️ Bullish day - reduce size" : "🟡 Choppy - wait for confirmation";
       sendTelegram(`🔻 <b>ORB BEARISH BREAKDOWN - ${ticker}</b>
 ⏰ ${new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} ET
 
@@ -782,7 +813,7 @@ async function sendOrbBrief() {
     const top5 = candidates.sort((a, b) => b.score - a.score).slice(0, 5);
     if (!top5.length) { sendTelegram("📐 <b>ORB Brief</b>\nNo strong candidates today."); return; }
     const lines = top5.map((c, i) => `${i+1}. <b>${c.ticker}</b>\n   PDH: $${c.prevHigh} · PDL: $${c.prevLow} · PDC: $${c.prevClose}\n   ATR: $${c.atr}`).join("\n\n");
-    sendTelegram(`📐 <b>ORB Pre-Market Brief — Top 5</b>
+    sendTelegram(`📐 <b>ORB Pre-Market Brief - Top 5</b>
 ⏰ 9:15am ET · Mark these levels before open
 ${biasEmoji()} Market Bias: <b>${marketBias}</b>
 
@@ -802,7 +833,7 @@ function connectOrbWS(tickers) {
     msgs.forEach(msg => {
       if (msg.ev === "status") {
         if (msg.status === "auth_success") {
-          log("ORB WS auth — subscribing...");
+          log("ORB WS auth - subscribing...");
           for (let i = 0; i < tickers.length; i += 50)
             orbWS.send(JSON.stringify({ action: "subscribe", params: tickers.slice(i, i+50).map(t => `AM.${t}`).join(",") }));
           sendTelegram(`📐 <b>ORB Scanner ACTIVE</b>\nBuilding 10-min range for ${tickers.length} tickers\nRange locks 9:40 · Breakout 9:40–10:15`);
@@ -869,17 +900,17 @@ async function checkScheduledMessages() {
   if (!isWeekday()) return;
   const etMins = getETMins();
 
-  // 8:30am — Gap scanner
+  // 8:30am - Gap scanner
   if (etMins >= 510 && etMins < 512 && !gapScanScheduled) {
     gapScanScheduled = true;
     await updateMarketBias();
     sendGapScanner();
   }
 
-  // 8:45am — Wind-down reminder
+  // 8:45am - Wind-down reminder
   if (etMins >= 525 && etMins < 527 && !windDownSentToday) {
     windDownSentToday = true;
-    sendTelegram(`⏰ <b>8:45am — Scalp Wind-Down</b>
+    sendTelegram(`⏰ <b>8:45am - Scalp Wind-Down</b>
 45 minutes until market open.
 
 🔔 Wrap up any open scalp positions
@@ -891,7 +922,7 @@ ${marketBias === "BULLISH" ? "→ Favor long ORB setups" : marketBias === "BEARI
     log("Wind-down reminder sent");
   }
 
-  // 4:30pm — Daily recap
+  // 4:30pm - Daily recap
   if (etMins >= 990 && etMins < 992 && !recapSentToday) {
     recapSentToday = true;
     const data = readData();
@@ -900,7 +931,7 @@ ${marketBias === "BULLISH" ? "→ Favor long ORB setups" : marketBias === "BEARI
     const wins   = todayAlerts.filter(a => a.outcome === "win").length;
     const losses = todayAlerts.filter(a => a.outcome === "loss").length;
     const traded = wins + losses;
-    const wr = traded ? Math.round(wins / traded * 100) + "%" : "—";
+    const wr = traded ? Math.round(wins / traded * 100) + "%" : "-";
 
     // Best setup today
     const scalpAlerts   = todayAlerts.filter(a => a.type === "scalp").length;
@@ -954,7 +985,7 @@ setInterval(async () => {
   }
 }, 30 * 60 * 1000);
 
-log("WickED starting — Scalp + Reversal + ORB + API + Gap + Wind-down + Recap");
+log("WickED starting - all scanners");
 updateMarketBias();
 tick();
 setInterval(tick, 60 * 1000);
