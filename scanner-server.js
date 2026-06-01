@@ -388,8 +388,7 @@ function formatScalpAlert(f) {
     ``,
     `<i>1-min scalp</i>`,
   ].filter(l => l !== undefined && !(l === "" && false));
-  return lines.join("
-");
+  return lines.join("\n");
 }
 
 function connectScalpWS(tickers) {
