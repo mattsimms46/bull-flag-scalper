@@ -1578,6 +1578,71 @@ body {
           </div>
         </div>
 
+        <!-- Scanner Intelligence — Pattern Scores + Sector -->
+        <div class="section-header" style="margin-top:8px">
+          <span class="section-title">🧭 Scanner Intelligence</span>
+          <span class="section-sub" id="si-last-update">Synced from Railway</span>
+        </div>
+
+        <!-- Sector Leadership -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="analytics-card">
+            <div class="ac-title" style="color:var(--green2)">🏆 Leading Sectors Today</div>
+            <div id="si-leading-sectors" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+              <div style="font-size:12px;color:var(--text2)">Loading sector data...</div>
+            </div>
+          </div>
+          <div class="analytics-card">
+            <div class="ac-title" style="color:var(--red2)">📉 Lagging Sectors</div>
+            <div id="si-lagging-sectors" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+              <div style="font-size:12px;color:var(--text2)">Loading sector data...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pattern Score Analysis -->
+        <div class="analytics-card">
+          <div class="ac-title">📊 Pattern Score vs Outcome</div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:6px" id="si-score-grid">
+            <div style="text-align:center;padding:8px;background:var(--bg2);border-radius:6px">
+              <div style="font-size:11px;color:var(--text2);margin-bottom:3px">Score 9-10</div>
+              <div style="font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--green2)" id="si-s10">—</div>
+              <div style="font-size:11px;color:var(--text2)">win rate</div>
+            </div>
+            <div style="text-align:center;padding:8px;background:var(--bg2);border-radius:6px">
+              <div style="font-size:11px;color:var(--text2);margin-bottom:3px">Score 7-8</div>
+              <div style="font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--green2)" id="si-s8">—</div>
+              <div style="font-size:11px;color:var(--text2)">win rate</div>
+            </div>
+            <div style="text-align:center;padding:8px;background:var(--bg2);border-radius:6px">
+              <div style="font-size:11px;color:var(--text2);margin-bottom:3px">Score 5-6</div>
+              <div style="font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--gold)" id="si-s6">—</div>
+              <div style="font-size:11px;color:var(--text2)">win rate</div>
+            </div>
+            <div style="text-align:center;padding:8px;background:var(--bg2);border-radius:6px">
+              <div style="font-size:11px;color:var(--text2);margin-bottom:3px">Score 3-4</div>
+              <div style="font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--gold)" id="si-s4">—</div>
+              <div style="font-size:11px;color:var(--text2)">win rate</div>
+            </div>
+            <div style="text-align:center;padding:8px;background:var(--bg2);border-radius:6px">
+              <div style="font-size:11px;color:var(--text2);margin-bottom:3px">Score 1-2</div>
+              <div style="font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--red2)" id="si-s2">—</div>
+              <div style="font-size:11px;color:var(--text2)">win rate</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-top:8px;font-style:italic">
+            Pattern rater is in LEARNING mode until 50+ trades logged. Scores shown but not filtering yet.
+          </div>
+        </div>
+
+        <!-- Recent Alert Scores -->
+        <div class="analytics-card">
+          <div class="ac-title">⚡ Recent Alert Pattern Scores</div>
+          <div id="si-recent-scores" style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+            <div style="font-size:12px;color:var(--text2)">No scored alerts yet today</div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -2279,8 +2344,81 @@ function buildTimeline() {
   }).join("");
 }
 
+// ── Scanner Intelligence ─────────────────────────────────────────────────────
+function renderScannerIntelligence() {
+  // Sector leadership from market bias data
+  const biasEl = document.getElementById("bias-label-main");
+  if (biasEl) {
+    // Try to get sector data from Railway data endpoint
+    fetch(`${API_URL}/data`, {
+      headers: { "X-API-Secret": API_SECRET }
+    }).then(r => r.json()).then(data => {
+      const sectors = data.sectorData;
+      if (sectors && sectors.leading) {
+        const leadEl = document.getElementById("si-leading-sectors");
+        const lagEl  = document.getElementById("si-lagging-sectors");
+        if (leadEl) leadEl.innerHTML = sectors.leading.map(s =>
+          `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">
+            <span style="color:var(--text0);font-weight:700">${s.etf}</span>
+            <span style="color:var(--text1)">${s.name}</span>
+            <span style="color:var(--green2);font-weight:700">+${s.relStrength}%</span>
+          </div>`
+        ).join("") || "<div style='color:var(--text2);font-size:12px'>No data yet</div>";
+        if (lagEl) lagEl.innerHTML = sectors.lagging.map(s =>
+          `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">
+            <span style="color:var(--text0);font-weight:700">${s.etf}</span>
+            <span style="color:var(--text1)">${s.name}</span>
+            <span style="color:var(--red2);font-weight:700">${s.relStrength}%</span>
+          </div>`
+        ).join("") || "<div style='color:var(--text2);font-size:12px'>No data yet</div>";
+      }
+    }).catch(() => {});
+  }
+
+  // Pattern score breakdown from journal
+  const scored = journal.filter(j => j.patternScore != null);
+  const scoreBuckets = [
+    {id:"si-s10", min:9, max:10},
+    {id:"si-s8",  min:7, max:8},
+    {id:"si-s6",  min:5, max:6},
+    {id:"si-s4",  min:3, max:4},
+    {id:"si-s2",  min:1, max:2},
+  ];
+  for (const b of scoreBuckets) {
+    const bucket = scored.filter(j => j.patternScore>=b.min && j.patternScore<=b.max && j.outcome!=="skip");
+    const wins   = bucket.filter(j => j.outcome==="win").length;
+    const el     = document.getElementById(b.id);
+    if (el) el.textContent = bucket.length ? `${Math.round(wins/bucket.length*100)}%` : "—";
+  }
+
+  // Recent scored alerts
+  const recentScored = alerts.filter(a => a.patternScore != null).slice(0,8);
+  const recentEl = document.getElementById("si-recent-scores");
+  if (recentEl && recentScored.length) {
+    recentEl.innerHTML = recentScored.map(a => {
+      const stars = "★".repeat(Math.round(a.patternScore/2)) + "☆".repeat(5-Math.round(a.patternScore/2));
+      const conf  = a.patternConfidence ? ` [${a.patternConfidence}]` : "";
+      const color = a.patternScore>=7?"var(--green2)":a.patternScore>=5?"var(--gold)":"var(--red2)";
+      const time  = new Date(a.time).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit"});
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--bg2);border-radius:4px;font-size:12px">
+        <span style="font-weight:700;color:var(--text0)">${a.ticker}</span>
+        <span style="color:var(--text2)">${a.type?.toUpperCase()}</span>
+        <span style="color:${color};font-weight:700">${a.patternScore}/10 ${stars}${conf}</span>
+        <span style="color:var(--text2)">${time}</span>
+        <span style="color:${a.outcome==="win"?"var(--green2)":a.outcome==="loss"?"var(--red2)":"var(--text2)"}">${a.outcome?.toUpperCase()||"—"}</span>
+      </div>`;
+    }).join("");
+  } else if (recentEl) {
+    recentEl.innerHTML = "<div style='font-size:12px;color:var(--text2)'>No scored alerts yet — pattern rater activates during market hours</div>";
+  }
+
+  const updateEl = document.getElementById("si-last-update");
+  if (updateEl) updateEl.textContent = `Updated ${new Date().toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit"})} ET`;
+}
+
 // ── Analytics Render ─────────────────────────────────────────────────────────
 function renderAnalytics() {
+  renderScannerIntelligence();
   const traded = journal.filter(j=>j.outcome&&j.outcome!=="skip");
   const wins   = journal.filter(j=>j.outcome==="win");
   const losses = journal.filter(j=>j.outcome==="loss");
@@ -2733,57 +2871,150 @@ async function manualScan(type) {
 // ── Pattern detection for manual scans ────────────────────────────────────────
 function detectManualFlag(candles, type) {
   const n = candles.length;
-  if (n < 20) return null;
+  if (n < 15) return null;
 
-  // Simple bull flag detection for daily candles
-  for (let i = n-2; i >= 8; i--) {
-    for (let poleLen = 4; poleLen <= 10; poleLen++) {
-      const ps = i - poleLen; if (ps<0) break;
-      const pole = candles.slice(ps, i);
-      const poleGain = (candles[i-1].close - candles[ps].open) / candles[ps].open;
-      if (poleGain < 0.06) continue;
-      const greenCount = pole.filter(c=>c.close>c.open).length;
-      if (greenCount < Math.ceil(poleLen*0.65)) continue;
-      const avgPoleVol = pole.reduce((s,c)=>s+c.vol,0)/poleLen;
-      const flagCandles = candles.slice(i, Math.min(i+10,n));
-      if (flagCandles.length < 3) continue;
-      const flagHigh = Math.max(...flagCandles.map(c=>c.high));
-      const flagLow  = Math.min(...flagCandles.map(c=>c.low));
-      const poleTop  = candles[i-1].close;
-      const flagRange = (flagHigh-flagLow)/poleTop;
-      if (flagRange > 0.10) continue;
-      const avgFlagVol = flagCandles.reduce((s,c)=>s+c.vol,0)/flagCandles.length;
-      const volContract = 1 - avgFlagVol/avgPoleVol;
-      if (volContract < 0.20) continue;
-      const flagAvg = flagCandles.reduce((s,c)=>s+c.close,0)/flagCandles.length;
-      if (flagAvg < candles[ps].open + (poleTop-candles[ps].open)*0.5) continue;
+  // Normalize candle fields (Alpaca returns o/h/l/c, old format uses open/close etc)
+  const norm = candles.map(c => ({
+    open:  c.o ?? c.open,  high: c.h ?? c.high,
+    low:   c.l ?? c.low,   close: c.c ?? c.close,
+    vol:   c.v ?? c.vol ?? 0, t: c.t
+  }));
 
-      // RSI
-      const closes = candles.slice(-15).map(c=>c.close);
-      let gains=0,losses=0;
-      for(let k=1;k<closes.length;k++){const d=closes[k]-closes[k-1];if(d>0)gains+=d;else losses-=d}
-      const ag=gains/7,al=losses/7;
-      const rsi=al===0?100:Math.round((100-100/(1+ag/al))*10)/10;
+  if (type === "scalp" || type === "orb") {
+    // Bull flag: pole of consecutive green candles + tight consolidation
+    // Same criteria as server scanner, no time restriction
+    for (let i = n-2; i >= 6; i--) {
+      for (let poleLen = 3; poleLen <= 8; poleLen++) {
+        const ps = i - poleLen; if (ps < 0) break;
+        const pole = norm.slice(ps, i);
+        const poleGain = (norm[i-1].close - norm[ps].open) / norm[ps].open;
+        if (type === "scalp" && poleGain < 0.02) continue;
+        if (type === "orb"   && poleGain < 0.04) continue;
+        const greenCount = pole.filter(c => c.close > c.open).length;
+        if (greenCount < Math.ceil(poleLen * 0.65)) continue;
+        const avgPoleVol = pole.reduce((s,c) => s+c.vol, 0) / poleLen;
+        if (avgPoleVol === 0) continue;
+        const flagCandles = norm.slice(i, Math.min(i+8, n));
+        if (flagCandles.length < 2) continue;
+        const flagHigh = Math.max(...flagCandles.map(c => c.high));
+        const flagLow  = Math.min(...flagCandles.map(c => c.low));
+        const poleTop  = norm[i-1].close;
+        const poleBtm  = norm[ps].open;
+        const poleH    = poleTop - poleBtm;
+        const flagRange = (flagHigh - flagLow) / poleTop;
+        if (flagRange > 0.08) continue;
+        const avgFlagVol = flagCandles.reduce((s,c) => s+c.vol, 0) / flagCandles.length;
+        if (avgFlagVol >= avgPoleVol * 0.85) continue; // need volume contraction
+        const flagAvg = flagCandles.reduce((s,c) => s+c.close, 0) / flagCandles.length;
+        if (flagAvg < poleBtm + poleH * 0.5) continue; // flag must hold upper half of pole
+        const volContract = 1 - (avgFlagVol / avgPoleVol);
+        const rvol = (avgPoleVol / (avgFlagVol || 1));
 
-      return {
-        direction: "bull",
-        price: candles[n-1].close.toFixed(2),
-        pole: (poleGain*100).toFixed(1),
-        rvol: (avgPoleVol/(avgFlagVol||1)).toFixed(1),
-        rsi,
-        target: (poleTop*(1+poleGain)).toFixed(2),
-        stop: (flagLow*0.99).toFixed(2),
-        conviction: Math.min(5, Math.round(volContract*5)+2),
-        candleType: type==="reversal"?"DOJI":null,
-        orbQuality: type==="orb"?((flagRange<0.03)?"ELITE":"GOOD"):null,
-        orbAtrPct: type==="orb"?(flagRange*100).toFixed(0):null,
-        srLevel: null,
-        vwap: null,
-      };
+        // RSI
+        const closes = norm.slice(-15).map(c => c.close);
+        let gains=0, losses=0;
+        for(let k=1;k<closes.length;k++){const d=closes[k]-closes[k-1];if(d>0)gains+=d;else losses-=d}
+        const ag=gains/7, al=losses/7;
+        const rsi = al===0?100:Math.round((100-100/(1+ag/al))*10)/10;
+
+        // ORB extra: ATR check
+        if (type === "orb") {
+          const recentRanges = norm.slice(-14).map(c => c.high - c.low);
+          const atr = recentRanges.reduce((s,r)=>s+r,0)/recentRanges.length;
+          const orbRange = flagHigh - flagLow;
+          const orbPct = atr > 0 ? orbRange/atr : 1;
+          if (orbPct > 0.50) continue; // ORB must be <50% ATR
+          const quality = orbPct <= 0.25 ? "ELITE" : orbPct <= 0.40 ? "GOOD" : "OK";
+          if (quality === "OK") continue;
+          return {
+            direction:"bull", price:norm[n-1].close.toFixed(2),
+            pole:(poleGain*100).toFixed(1), rvol:rvol.toFixed(1), rsi,
+            target:(poleTop*(1+poleGain)).toFixed(2), stop:(flagLow*0.99).toFixed(2),
+            conviction:quality==="ELITE"?5:4,
+            orbQuality:quality, orbAtrPct:(orbPct*100).toFixed(0),
+            candleType:null, srLevel:null, vwap:null,
+          };
+        }
+
+        return {
+          direction:"bull", price:norm[n-1].close.toFixed(2),
+          pole:(poleGain*100).toFixed(1), rvol:rvol.toFixed(1), rsi,
+          target:(poleTop*(1+poleGain)).toFixed(2), stop:(flagLow*0.99).toFixed(2),
+          conviction:Math.min(5, Math.round(volContract*5)+2),
+          candleType:null, orbQuality:null, orbAtrPct:null, srLevel:null, vwap:null,
+        };
+      }
     }
+    return null;
   }
+
+  if (type === "reversal") {
+    // Marubozu pole + exhaustion candle — same as server reversal scanner
+    function isMarubozu(c) { const r=c.high-c.low; return r>0&&Math.abs(c.close-c.open)/r>0.60; }
+    function isExhaustion(c) {
+      const r=c.high-c.low; if(r===0) return true; // doji
+      const body=Math.abs(c.close-c.open)/r;
+      const upper=(c.high-Math.max(c.open,c.close))/r;
+      const lower=(Math.min(c.open,c.close)-c.low)/r;
+      if(body<0.10) return true; // doji
+      if(body<0.30&&upper>0.35&&lower>0.35) return true; // spinning top
+      if(upper>0.40&&body<0.30&&c.close<c.open) return true; // shooting star
+      if(lower>0.40&&body<0.30&&c.close>c.open) return true; // hammer
+      return false;
+    }
+
+    for (let ei = n-1; ei >= n-5; ei--) {
+      const exhaustBar = norm[ei];
+      if (!isExhaustion(exhaustBar)) continue;
+
+      for (let poleLen = 4; poleLen <= 6; poleLen++) {
+        const ps = ei - poleLen; if (ps < 0) continue;
+        const pole = norm.slice(ps, ei);
+        const allGreen = pole.every(c => c.close > c.open);
+        const allRed   = pole.every(c => c.close < c.open);
+        if (!allGreen && !allRed) continue;
+        const marubozuCount = pole.filter(isMarubozu).length;
+        if (marubozuCount < 3) continue;
+        const avgPoleVol = pole.reduce((s,c)=>s+c.vol,0)/poleLen;
+        const volSpike = avgPoleVol>0?(exhaustBar.vol/avgPoleVol).toFixed(1):"N/A";
+
+        const rsi = (() => {
+          const closes = norm.slice(Math.max(0,ei-14),ei+1).map(c=>c.close);
+          if(closes.length<8) return null;
+          let g=0,l=0;
+          for(let k=1;k<closes.length;k++){const d=closes[k]-closes[k-1];if(d>0)g+=d;else l-=d}
+          const ag=g/7,al=l/7; return al===0?100:Math.round((100-100/(1+ag/al))*10)/10;
+        })();
+
+        const direction = allGreen ? "bear" : "bull";
+        const candleType = isExhaustion(exhaustBar) ? (
+          Math.abs(exhaustBar.close-exhaustBar.open)/(exhaustBar.high-exhaustBar.low||1) < 0.10 ? "DOJI" :
+          exhaustBar.high-Math.max(exhaustBar.open,exhaustBar.close) > Math.abs(exhaustBar.close-exhaustBar.open)*2 ? "SHOOTING STAR" :
+          Math.min(exhaustBar.open,exhaustBar.close)-exhaustBar.low > Math.abs(exhaustBar.close-exhaustBar.open)*2 ? "HAMMER" :
+          "SPINNING TOP"
+        ) : "INDECISION";
+
+        const poleMove = Math.abs((norm[ei-1].close-norm[ps].open)/norm[ps].open*100).toFixed(1);
+        const rsiStars = !rsi?"":(rsi<=10||rsi>=90)?"⭐⭐⭐":(rsi<=20||rsi>=80)?"⭐⭐":(rsi<=30||rsi>=70)?"⭐":"";
+
+        return {
+          direction, price:exhaustBar.close.toFixed(2),
+          pole:poleMove, rvol:volSpike, rsi,
+          target: direction==="bull"?(exhaustBar.close*(1+parseFloat(poleMove)/100)).toFixed(2):(exhaustBar.close*(1-parseFloat(poleMove)/100)).toFixed(2),
+          stop:  direction==="bull"?(exhaustBar.low*0.99).toFixed(2):(exhaustBar.high*1.01).toFixed(2),
+          conviction: Math.min(5, marubozuCount + (rsiStars.length)),
+          candleType, orbQuality:null, orbAtrPct:null,
+          srLevel:`${poleLen}-candle ${allGreen?"bearish":"bullish"} pole (${marubozuCount}/${poleLen} Marubozu)`,
+          vwap:null,
+        };
+      }
+    }
+    return null;
+  }
+
   return null;
 }
+
 
 // ── Test Mode ─────────────────────────────────────────────────────────────────
 function generateFakeCandles(seed, n=63, hasBull=false) {
