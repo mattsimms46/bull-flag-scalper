@@ -91,7 +91,9 @@ function pushAlert(alert) {
     alert.time = new Date().toISOString();
     alert.outcome = null; alert.notes = '';
     data.alerts.unshift(alert);
-    if (data.alerts.length > 200) data.alerts = data.alerts.slice(0,200);
+    // Keep only today's alerts on server (dashboard localStorage is the persistent store)
+    const today = new Date().toDateString();
+    data.alerts = data.alerts.filter(a => new Date(a.time).toDateString() === today).slice(0,200);
     writeData(data);
   } catch(e) { log(`Alert store: ${e.message}`); }
 }
@@ -323,6 +325,72 @@ function onBarRouter(bar) {
   if (barHandlers.scalp)    barHandlers.scalp(bar);
   if (barHandlers.reversal) barHandlers.reversal(bar);
   if (barHandlers.orb)      barHandlers.orb(bar);
+}
+
+// ── Dynamic NASDAQ Universe ($20-$150) ───────────────────────────────────────
+let _nasdaqUniverse = [];
+let _universeFetchedAt = null;
+
+async function fetchNasdaqUniverse(minPrice=20, maxPrice=150) {
+  // Check cache — rebuild once per day
+  const now = Date.now();
+  if (_nasdaqUniverse.length && _universeFetchedAt && now - _universeFetchedAt < 23*3600*1000) {
+    log(`Universe cache: ${_nasdaqUniverse.length} tickers`);
+    return _nasdaqUniverse;
+  }
+  log(`Fetching NASDAQ universe $${minPrice}-$${maxPrice}...`);
+  try {
+    const headers = {
+      'APCA-API-KEY-ID':     process.env.ALPACA_API_KEY,
+      'APCA-API-SECRET-KEY': process.env.ALPACA_API_SECRET,
+      'Accept': 'application/json',
+    };
+    // Get all active NASDAQ assets
+    const res = await fetch(
+      'https://paper-api.alpaca.markets/v2/assets?status=active&exchange=NASDAQ&asset_class=us_equity',
+      { headers }
+    );
+    if (!res.ok) { log(`Assets fetch ${res.status}`); return _nasdaqUniverse; }
+    const assets = await res.json();
+
+    // Filter to tradeable, no OTC, clean symbols
+    const candidates = assets
+      .filter(a => a.tradable && a.shortable !== false && /^[A-Z]{1,5}$/.test(a.symbol))
+      .map(a => a.symbol);
+
+    log(`NASDAQ assets: ${candidates.length} tradeable symbols`);
+
+    // Fetch current prices in batches to filter by price range
+    const inRange = [];
+    for (let i = 0; i < candidates.length; i += 100) {
+      const batch = candidates.slice(i, i+100);
+      try {
+        const to   = new Date().toISOString().split('T')[0];
+        const from = new Date(Date.now()-3*864e5).toISOString().split('T')[0];
+        const r = await fetch(
+          `https://data.alpaca.markets/v2/stocks/bars?symbols=${batch.join(',')}&timeframe=1Day&start=${from}&end=${to}&feed=sip&sort=desc&limit=1`,
+          { headers }
+        );
+        if (!r.ok) continue;
+        const json = await r.json();
+        for (const [sym, bars] of Object.entries(json.bars || {})) {
+          if (!bars.length) continue;
+          const price = bars[0].c;
+          if (price >= minPrice && price <= maxPrice) inRange.push(sym);
+        }
+      } catch(e) { log(`Batch price fetch: ${e.message}`); }
+      // Small delay to avoid rate limits
+      if (i + 100 < candidates.length) await new Promise(r => setTimeout(r, 300));
+    }
+
+    _nasdaqUniverse = inRange;
+    _universeFetchedAt = now;
+    log(`NASDAQ universe built: ${inRange.length} stocks between $${minPrice}-$${maxPrice}`);
+    return inRange;
+  } catch(e) {
+    log(`Universe fetch failed: ${e.message}`);
+    return _nasdaqUniverse;
+  }
 }
 
 function ensureLiveConnection(tickers) {
@@ -611,9 +679,12 @@ ${biasNote}
 async function startReversal() {
   log('Reversal scanner starting');
   revActive=true; revAlerted.clear(); revBars5m={};
-  const revUniverse = withLeadingSectorNames(REVERSAL_TICKERS);
-  for (let i=0; i<revUniverse.length; i+=10)
-    await Promise.allSettled(revUniverse.slice(i,i+10).map(t=>fetchRevLevels(t)));
+  // Build dynamic universe: all NASDAQ $20-$150 + leader stocks
+  const dynamicUniverse = await fetchNasdaqUniverse(20, 150);
+  const revUniverse = [...new Set([...withLeadingSectorNames(REVERSAL_TICKERS), ...dynamicUniverse])].slice(0, 800);
+  log(`Reversal universe: ${revUniverse.length} tickers`);
+  for (let i=0; i<revUniverse.length; i+=20)
+    await Promise.allSettled(revUniverse.slice(i,i+20).map(t=>fetchRevLevels(t)));
 
   const fiveMBuckets = {}; // ticker -> current 5-min bucket
 
@@ -642,7 +713,7 @@ async function startReversal() {
               log(`${rev.emoji} REVERSAL: ${ticker} ${rev.direction} | pattern ${rating?rating.score:'n/a'}/10`);
               sendTelegram(formatRevAlert(rev) + scoreLine);
               pushAlert({type:'reversal',ticker,direction:rev.direction.includes('BULL')?'bull':'bear',price:rev.currentPrice,candleType:rev.candleType,rvol:rev.volSpike,rsi:rev.rsi,srLevel:rev.srLevel?.type||null,target:null,stop:null,conviction:rev.rsiStars.length+2,patternScore:rating?rating.score:null,patternConfidence:rating?rating.confidence:null});
-              setTimeout(()=>revAlerted.delete(ticker),20*60*1000);
+              setTimeout(()=>revAlerted.delete(ticker),45*60*1000);
             } else {
               log(`REVERSAL ${ticker} suppressed: pattern ${rating.score}/10 < ${MIN_PATTERN_SCORE} (${rating.confidence})`);
             }
@@ -672,7 +743,7 @@ function stopReversal() {
 
 async function checkRevSchedule() {
   const etMins=getETMins();
-  if (isWeekday()&&etMins>=570&&etMins<630) { if(!revActive) await startReversal(); }
+  if (isWeekday()&&etMins>=585&&etMins<780) { if(!revActive) await startReversal(); }
   else { if(revActive) stopReversal(); }
 }
 
@@ -750,9 +821,12 @@ async function sendOrbBrief() {
 async function startOrb() {
   log('ORB scanner starting');
   orbActive=true; orbData={}; orbBars5m={}; orbAlerted.clear();
-  const orbUniverse = withLeadingSectorNames(ORB_TICKERS);
-  for (let i=0; i<orbUniverse.length; i+=10)
-    await Promise.allSettled(orbUniverse.slice(i,i+10).map(t=>fetchOrbData(t)));
+  // Build dynamic universe: all NASDAQ $20-$150 + leader stocks
+  const dynamicUniverse = await fetchNasdaqUniverse(20, 150);
+  const orbUniverse = [...new Set([...withLeadingSectorNames(ORB_TICKERS), ...dynamicUniverse])].slice(0, 800);
+  log(`ORB universe: ${orbUniverse.length} tickers`);
+  for (let i=0; i<orbUniverse.length; i+=20)
+    await Promise.allSettled(orbUniverse.slice(i,i+20).map(t=>fetchOrbData(t)));
 
   const fiveMBuckets={};
 
@@ -774,8 +848,8 @@ async function startOrb() {
       last.bar.c=bar.c; last.bar.v+=bar.v;
     }
 
-    // Build ORB 9:30-9:40
-    if (etMins>=570&&etMins<580) {
+    // Build ORB 9:00-9:10 (first 10 minutes)
+    if (etMins>=540&&etMins<550) {
       if (!orbData[ticker]) orbData[ticker]={high:bar.h,low:bar.l,locked:false};
       else if (!orbData[ticker].locked) {
         orbData[ticker].high=Math.max(orbData[ticker].high,bar.h);
@@ -783,8 +857,8 @@ async function startOrb() {
       }
     }
 
-    // Lock ORB at 9:40
-    if (etMins>=580&&orbData[ticker]&&!orbData[ticker].locked) {
+    // Lock ORB at 9:10
+    if (etMins>=550&&orbData[ticker]&&!orbData[ticker].locked) {
       orbData[ticker].locked=true;
       const orb=orbData[ticker];
       const orbRange=orb.high-orb.low;
@@ -794,8 +868,8 @@ async function startOrb() {
       if (orbPct) { orb.orbPct=orbPct; orb.quality=orbQuality(orbPct); orb.orbRange=orbRange; }
     }
 
-    // Process completed 5-min bar for breakout detection 9:40-10:15
-    if (completedBar&&etMins>=580&&etMins<615) {
+    // Process completed 5-min bar for breakout detection 9:10-10:00
+    if (completedBar&&etMins>=550&&etMins<600) {
       if (!orbBars5m[ticker]) orbBars5m[ticker]=[];
       orbBars5m[ticker].push(completedBar);
       if (orbBars5m[ticker].length>30) orbBars5m[ticker].shift();
@@ -839,7 +913,7 @@ async function startOrb() {
         sendTelegram(`🚀 <b>ORB BULLISH BREAKOUT - ${ticker}</b>\n⏰ ${new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'})} ET\n\n💰 $${completedBar.c.toFixed(2)}\n📊 RSI(7): ${rsi??'N/A'}\n⚡ Vol: ${avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A'}x\n\n📐 ORB H:$${orb.high.toFixed(2)} L:$${orb.low.toFixed(2)}\n   ATR%: ${atrPct}% ${quality.emoji} ${quality.label} ${quality.stars}\n   Break: +${breakPct}%\n\n${biasEmoji()} ${biasNote}\n\n🎯 T1:$${tgt1} T2:$${tgt2}\n🛑 Stop:$${stop}\n\n🗓 PDH:$${prev.high?.toFixed(2)||'N/A'} PDL:$${prev.low?.toFixed(2)||'N/A'}\n\n<i>ORB 10-min via Alpaca SIP</i>` + scoreLine);
         pushAlert({type:'orb',ticker,direction:'bull',price:completedBar.c.toFixed(2),orbQuality:quality.label,orbAtrPct:atrPct,rvol:avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A',rsi,target:tgt1,stop,conviction:quality.label==='ELITE'?5:4,patternScore:rating?rating.score:null,patternConfidence:rating?rating.confidence:null});
         log(`🚀 ORB BULL: ${ticker} +${breakPct}%`);
-        setTimeout(()=>orbAlerted.delete(ticker),15*60*1000);
+        setTimeout(()=>orbAlerted.delete(ticker),45*60*1000);
       } else if (closeBelow) {
         const breakPct=((orb.low-completedBar.c)/orb.low*100).toFixed(2);
         const { allow, scoreLine, rating } = await rateAndGate(orbSetup);
@@ -853,7 +927,7 @@ async function startOrb() {
         sendTelegram(`🔻 <b>ORB BEARISH BREAKDOWN - ${ticker}</b>\n⏰ ${new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'})} ET\n\n💰 $${completedBar.c.toFixed(2)}\n📊 RSI(7): ${rsi??'N/A'}\n⚡ Vol: ${avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A'}x\n\n📐 ORB H:$${orb.high.toFixed(2)} L:$${orb.low.toFixed(2)}\n   ATR%: ${atrPct}% ${quality.emoji} ${quality.label} ${quality.stars}\n   Break: -${breakPct}%\n\n${biasEmoji()} ${biasNote}\n\n🎯 T1:$${tgt1} T2:$${tgt2}\n🛑 Stop:$${stop}\n\n<i>ORB 10-min via Alpaca SIP</i>` + scoreLine);
         pushAlert({type:'orb',ticker,direction:'bear',price:completedBar.c.toFixed(2),orbQuality:quality.label,orbAtrPct:atrPct,rvol:avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A',rsi,target:tgt1,stop,conviction:quality.label==='ELITE'?5:4,patternScore:rating?rating.score:null,patternConfidence:rating?rating.confidence:null});
         log(`🔻 ORB BEAR: ${ticker} -${breakPct}%`);
-        setTimeout(()=>orbAlerted.delete(ticker),15*60*1000);
+        setTimeout(()=>orbAlerted.delete(ticker),45*60*1000);
       }
     }
   };
@@ -872,12 +946,12 @@ function stopOrb() {
 
 async function checkOrbSchedule() {
   const etMins=getETMins();
-  if (isWeekday()&&etMins>=555&&etMins<557&&!orbBriefSent) {
+  if (isWeekday()&&etMins>=535&&etMins<537&&!orbBriefSent) {
     for (let i=0; i<ORB_TICKERS.length; i+=10)
       await Promise.allSettled(ORB_TICKERS.slice(i,i+10).map(t=>fetchOrbData(t)));
     sendOrbBrief();
   }
-  if (isWeekday()&&etMins>=570&&etMins<615) { if(!orbActive) await startOrb(); }
+  if (isWeekday()&&etMins>=540&&etMins<600) { if(!orbActive) await startOrb(); }
   else { if(orbActive) stopOrb(); }
 }
 
