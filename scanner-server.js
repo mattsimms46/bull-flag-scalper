@@ -14,6 +14,10 @@ const alpacaLive = require('./alpaca-live');
 // Pre-market scanner (Alpaca variant — universe-based)
 const premarketScanner = require('./premarket-scanner-alpaca');
 
+// Sector rotation + pattern rating (Session 4 additions)
+const sectorScanner = require('./sector-scanner');
+const patternRater  = require('./pattern-rater');
+
 // ── Config ────────────────────────────────────────────────────────────────────
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT  = process.env.TELEGRAM_CHAT  || process.env.TELEGRAM_CHAT_ID;
@@ -22,6 +26,27 @@ const PORT           = parseInt(process.env.PORT  || '8080');
 const MIN_PRICE      = parseFloat(process.env.MIN_PRICE   || '1');
 const MAX_PRICE      = parseFloat(process.env.MAX_PRICE   || '20');
 const MIN_RVOL       = parseFloat(process.env.MIN_RVOL    || '5');
+
+// Pattern-score gate. Kept LOW by default because the rater pulls scores
+// toward neutral while it has little history (LEARNING mode). Raise this as
+// your trade log grows and the rater earns confidence. The gate is also
+// bypassed entirely while a rating's confidence === 'LEARNING' (see rateAndGate).
+const MIN_PATTERN_SCORE = parseFloat(process.env.MIN_PATTERN_SCORE || '3');
+
+// Load PROPOSED scanner params (optional — absent until you run the optimizer).
+// Informational/governance only here; the rater reads the file itself too.
+let scannerParams = null;
+(function loadScannerParams() {
+  try {
+    const p = path.join(__dirname, 'scanner-params.json');
+    if (fs.existsSync(p)) {
+      scannerParams = JSON.parse(fs.readFileSync(p, 'utf8'));
+      log(`Loaded scanner-params.json (status=${scannerParams.status}, generated=${scannerParams.generated_at}). PROPOSED only — not auto-armed.`);
+    } else {
+      log('No scanner-params.json yet — rater will derive ranges from the trade log.');
+    }
+  } catch (e) { log(`scanner-params load: ${e.message}`); }
+})();
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
@@ -223,6 +248,63 @@ function getET() { return new Date(new Date().toLocaleString('en-US',{timeZone:'
 function getETMins() { const et=getET(); return et.getHours()*60+et.getMinutes(); }
 function isWeekday() { const d=getET().getDay(); return d>=1&&d<=5; }
 
+// ── Pattern rating helper ───────────────────────────────────────────────────
+// Rates an ORB/reversal setup, decides whether to alert, and returns a
+// Telegram-ready block. Returns { allow, scoreLine, rating }.
+//
+// GATE LOGIC (honest): while the rater is in LEARNING mode it deliberately
+// can't be confident, so we ALWAYS allow the alert (annotated) and let you
+// see every setup. Once confidence is DEVELOPING/ESTABLISHED, the numeric
+// gate (MIN_PATTERN_SCORE) applies.
+async function rateAndGate(setup) {
+  try {
+    const rating = await patternRater.ratePattern(setup, {
+      isLeaderStock: sectorScanner.isLeaderStock,
+    });
+    const learning = rating.confidence === 'LEARNING';
+    const allow = learning ? true : (rating.score >= MIN_PATTERN_SCORE);
+    const stars = '★'.repeat(Math.round(rating.score / 2)) +
+                  '☆'.repeat(5 - Math.round(rating.score / 2));
+    const conf = rating.confidence === 'ESTABLISHED' ? '' : ` [${rating.confidence}]`;
+    const sectorCtx = sectorScanner.getStockSector(setup.symbol);
+    const leaders = sectorScanner.getLeadingSectors().map(s => s.etf);
+    const sectorLine = sectorCtx
+      ? `🧭 Sector: ${sectorCtx}${leaders.includes(sectorCtx) ? ' (LEADING)' : ''}`
+      : '';
+    const scoreLine =
+      `\n📊 Pattern: <b>${rating.score}/10</b> ${stars}${conf}\n` +
+      `~ ${rating.similar_to}\n` +
+      (sectorLine ? sectorLine + '\n' : '') +
+      rating.reasons.map(r => `  • ${r}`).join('\n');
+    return { allow, scoreLine, rating };
+  } catch (e) {
+    // Never let rating failure block a real setup — fail open, unannotated.
+    log(`Pattern rate: ${e.message}`);
+    return { allow: true, scoreLine: '', rating: null };
+  }
+}
+
+// Merge today's leading-sector names into a base ticker list (deduped,
+// symbol-clean). Used to expand ORB + reversal universes at startup.
+function withLeadingSectorNames(baseList) {
+  try {
+    const leaders = sectorScanner.getLeadingSectors(); // [{etf,name,names:[...]}]
+    const add = [];
+    for (const s of leaders) for (const sym of (s.names || [])) add.push(sym);
+    return [...new Set([...baseList, ...add])].filter(t => t.length <= 5 && /^[A-Z]+$/.test(t));
+  } catch (e) { log(`sector merge: ${e.message}`); return baseList; }
+}
+
+// Time-of-day bucket from current ET minutes (minutes since 09:30).
+function todBucketNow() {
+  const m = getETMins() - 570;
+  if (m < 0) return 'premarket';
+  if (m < 60) return 'open';
+  if (m < 210) return 'midday';
+  if (m < 360) return 'afternoon';
+  return 'close';
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ── ALPACA LIVE CONNECTION ────────────────────────────────────────────────────
 // One WebSocket, all scanners share it via onBar routing
@@ -400,14 +482,14 @@ async function startScalp() {
   };
 
   ensureLiveConnection(tickers);
-  
+
 }
 
 function stopScalp() {
   scalpActive=false; barHandlers.scalp=null;
   scalpBars={}; scalpAlerted.clear();
   log('Scalp stopped');
-  
+
   cleanupLiveConnection();
 }
 
@@ -529,13 +611,14 @@ ${biasNote}
 async function startReversal() {
   log('Reversal scanner starting');
   revActive=true; revAlerted.clear(); revBars5m={};
-  for (let i=0; i<REVERSAL_TICKERS.length; i+=10)
-    await Promise.allSettled(REVERSAL_TICKERS.slice(i,i+10).map(t=>fetchRevLevels(t)));
+  const revUniverse = withLeadingSectorNames(REVERSAL_TICKERS);
+  for (let i=0; i<revUniverse.length; i+=10)
+    await Promise.allSettled(revUniverse.slice(i,i+10).map(t=>fetchRevLevels(t)));
 
   const fiveMBuckets = {}; // ticker -> current 5-min bucket
 
-  barHandlers.reversal = (bar) => {
-    const ticker=bar.symbol; if(!REVERSAL_TICKERS.includes(ticker)) return;
+  barHandlers.reversal = async (bar) => {
+    const ticker=bar.symbol; if(!revUniverse.includes(ticker)) return;
     if (!fiveMBuckets[ticker]) fiveMBuckets[ticker]=null;
     const tsMs=new Date(bar.t).getTime();
     const bucket=Math.floor(tsMs/(5*60*1000));
@@ -548,11 +631,21 @@ async function startReversal() {
         if (revBars5m[ticker].length>=7&&!revAlerted.has(ticker)) {
           const rev=detectReversal(ticker);
           if (rev) {
-            revAlerted.add(ticker);
-            log(`${rev.emoji} REVERSAL: ${ticker} ${rev.direction}`);
-            sendTelegram(formatRevAlert(rev));
-            pushAlert({type:'reversal',ticker,direction:rev.direction.includes('BULL')?'bull':'bear',price:rev.currentPrice,candleType:rev.candleType,rvol:rev.volSpike,rsi:rev.rsi,srLevel:rev.srLevel?.type||null,target:null,stop:null,conviction:rev.rsiStars.length+2});
-            setTimeout(()=>revAlerted.delete(ticker),20*60*1000);
+            // Build the setup view the rater needs (values already computed above).
+            const setup = {
+              scanner: 'reversal', symbol: ticker,
+              rsi: rev.rsi, marubozuCount: rev.marubozuCount, tod_bucket: todBucketNow(),
+            };
+            const { allow, scoreLine, rating } = await rateAndGate(setup);
+            if (allow) {
+              revAlerted.add(ticker);
+              log(`${rev.emoji} REVERSAL: ${ticker} ${rev.direction} | pattern ${rating?rating.score:'n/a'}/10`);
+              sendTelegram(formatRevAlert(rev) + scoreLine);
+              pushAlert({type:'reversal',ticker,direction:rev.direction.includes('BULL')?'bull':'bear',price:rev.currentPrice,candleType:rev.candleType,rvol:rev.volSpike,rsi:rev.rsi,srLevel:rev.srLevel?.type||null,target:null,stop:null,conviction:rev.rsiStars.length+2,patternScore:rating?rating.score:null,patternConfidence:rating?rating.confidence:null});
+              setTimeout(()=>revAlerted.delete(ticker),20*60*1000);
+            } else {
+              log(`REVERSAL ${ticker} suppressed: pattern ${rating.score}/10 < ${MIN_PATTERN_SCORE} (${rating.confidence})`);
+            }
           }
         }
       }
@@ -565,15 +658,15 @@ async function startReversal() {
     }
   };
 
-  ensureLiveConnection(REVERSAL_TICKERS);
-  
+  ensureLiveConnection(revUniverse);
+
 }
 
 function stopReversal() {
   revActive=false; barHandlers.reversal=null;
   revBars5m={}; revAlerted.clear();
   log('Rev stopped');
-  
+
   cleanupLiveConnection();
 }
 
@@ -657,13 +750,14 @@ async function sendOrbBrief() {
 async function startOrb() {
   log('ORB scanner starting');
   orbActive=true; orbData={}; orbBars5m={}; orbAlerted.clear();
-  for (let i=0; i<ORB_TICKERS.length; i+=10)
-    await Promise.allSettled(ORB_TICKERS.slice(i,i+10).map(t=>fetchOrbData(t)));
+  const orbUniverse = withLeadingSectorNames(ORB_TICKERS);
+  for (let i=0; i<orbUniverse.length; i+=10)
+    await Promise.allSettled(orbUniverse.slice(i,i+10).map(t=>fetchOrbData(t)));
 
   const fiveMBuckets={};
 
-  barHandlers.orb = (bar) => {
-    const ticker=bar.symbol; if(!ORB_TICKERS.includes(ticker)) return;
+  barHandlers.orb = async (bar) => {
+    const ticker=bar.symbol; if(!orbUniverse.includes(ticker)) return;
     const etMins=getETMins();
 
     // Update 5-min buckets
@@ -722,41 +816,57 @@ async function startOrb() {
       const prev=orbPrevDay[ticker]||{};
       const atrPct=orb.orbPct?(orb.orbPct*100).toFixed(0):'N/A';
 
+      // Rater setup view (OR/ATR ratio is orb.orbPct; RSI already computed).
+      const orbSetup = {
+        scanner: 'orb', symbol: ticker,
+        rsi, orAtrRatio: orb.orbPct, tod_bucket: todBucketNow(),
+      };
+
       // Alert only on confirmed 5-min close strictly outside OR
       const closeAbove = completedBar.c > orb.high;
       const closeBelow = completedBar.c < orb.low;
       if (closeAbove || closeBelow) log(`ORB ${ticker}: 5-min close $${completedBar.c.toFixed(2)} vs H:$${orb.high.toFixed(2)} L:$${orb.low.toFixed(2)} - breakout confirmed`);
       if (closeAbove) {
-        orbAlerted.add(ticker);
         const breakPct=((completedBar.c-orb.high)/orb.high*100).toFixed(2);
+        const { allow, scoreLine, rating } = await rateAndGate(orbSetup);
+        if (!allow) {
+          log(`ORB ${ticker} BULL suppressed: pattern ${rating.score}/10 < ${MIN_PATTERN_SCORE} (${rating.confidence})`);
+          return;
+        }
+        orbAlerted.add(ticker);
         const tgt1=(orb.high+orb.orbRange).toFixed(2), tgt2=(orb.high+orb.orbRange*2).toFixed(2), stop=(orb.high*0.995).toFixed(2);
         const biasNote=marketBias==='BULLISH'?'✅ Bullish bias - high conviction':marketBias==='BEARISH'?'⚠️ Bearish day - reduce size':'🟡 Choppy - wait for confirmation';
-        sendTelegram(`🚀 <b>ORB BULLISH BREAKOUT - ${ticker}</b>\n⏰ ${new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'})} ET\n\n💰 $${completedBar.c.toFixed(2)}\n📊 RSI(7): ${rsi??'N/A'}\n⚡ Vol: ${avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A'}x\n\n📐 ORB H:$${orb.high.toFixed(2)} L:$${orb.low.toFixed(2)}\n   ATR%: ${atrPct}% ${quality.emoji} ${quality.label} ${quality.stars}\n   Break: +${breakPct}%\n\n${biasEmoji()} ${biasNote}\n\n🎯 T1:$${tgt1} T2:$${tgt2}\n🛑 Stop:$${stop}\n\n🗓 PDH:$${prev.high?.toFixed(2)||'N/A'} PDL:$${prev.low?.toFixed(2)||'N/A'}\n\n<i>ORB 10-min via Alpaca SIP</i>`);
-        pushAlert({type:'orb',ticker,direction:'bull',price:completedBar.c.toFixed(2),orbQuality:quality.label,orbAtrPct:atrPct,rvol:avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A',rsi,target:tgt1,stop,conviction:quality.label==='ELITE'?5:4});
+        sendTelegram(`🚀 <b>ORB BULLISH BREAKOUT - ${ticker}</b>\n⏰ ${new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'})} ET\n\n💰 $${completedBar.c.toFixed(2)}\n📊 RSI(7): ${rsi??'N/A'}\n⚡ Vol: ${avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A'}x\n\n📐 ORB H:$${orb.high.toFixed(2)} L:$${orb.low.toFixed(2)}\n   ATR%: ${atrPct}% ${quality.emoji} ${quality.label} ${quality.stars}\n   Break: +${breakPct}%\n\n${biasEmoji()} ${biasNote}\n\n🎯 T1:$${tgt1} T2:$${tgt2}\n🛑 Stop:$${stop}\n\n🗓 PDH:$${prev.high?.toFixed(2)||'N/A'} PDL:$${prev.low?.toFixed(2)||'N/A'}\n\n<i>ORB 10-min via Alpaca SIP</i>` + scoreLine);
+        pushAlert({type:'orb',ticker,direction:'bull',price:completedBar.c.toFixed(2),orbQuality:quality.label,orbAtrPct:atrPct,rvol:avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A',rsi,target:tgt1,stop,conviction:quality.label==='ELITE'?5:4,patternScore:rating?rating.score:null,patternConfidence:rating?rating.confidence:null});
         log(`🚀 ORB BULL: ${ticker} +${breakPct}%`);
         setTimeout(()=>orbAlerted.delete(ticker),15*60*1000);
       } else if (closeBelow) {
-        orbAlerted.add(ticker);
         const breakPct=((orb.low-completedBar.c)/orb.low*100).toFixed(2);
+        const { allow, scoreLine, rating } = await rateAndGate(orbSetup);
+        if (!allow) {
+          log(`ORB ${ticker} BEAR suppressed: pattern ${rating.score}/10 < ${MIN_PATTERN_SCORE} (${rating.confidence})`);
+          return;
+        }
+        orbAlerted.add(ticker);
         const tgt1=(orb.low-orb.orbRange).toFixed(2), tgt2=(orb.low-orb.orbRange*2).toFixed(2), stop=(orb.low*1.005).toFixed(2);
         const biasNote=marketBias==='BEARISH'?'✅ Bearish bias - high conviction':marketBias==='BULLISH'?'⚠️ Bullish day - reduce size':'🟡 Choppy - wait for confirmation';
-        sendTelegram(`🔻 <b>ORB BEARISH BREAKDOWN - ${ticker}</b>\n⏰ ${new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'})} ET\n\n💰 $${completedBar.c.toFixed(2)}\n📊 RSI(7): ${rsi??'N/A'}\n⚡ Vol: ${avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A'}x\n\n📐 ORB H:$${orb.high.toFixed(2)} L:$${orb.low.toFixed(2)}\n   ATR%: ${atrPct}% ${quality.emoji} ${quality.label} ${quality.stars}\n   Break: -${breakPct}%\n\n${biasEmoji()} ${biasNote}\n\n🎯 T1:$${tgt1} T2:$${tgt2}\n🛑 Stop:$${stop}\n\n<i>ORB 10-min via Alpaca SIP</i>`);
-        pushAlert({type:'orb',ticker,direction:'bear',price:completedBar.c.toFixed(2),orbQuality:quality.label,orbAtrPct:atrPct,rvol:avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A',rsi,target:tgt1,stop,conviction:quality.label==='ELITE'?5:4});
+        sendTelegram(`🔻 <b>ORB BEARISH BREAKDOWN - ${ticker}</b>\n⏰ ${new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit'})} ET\n\n💰 $${completedBar.c.toFixed(2)}\n📊 RSI(7): ${rsi??'N/A'}\n⚡ Vol: ${avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A'}x\n\n📐 ORB H:$${orb.high.toFixed(2)} L:$${orb.low.toFixed(2)}\n   ATR%: ${atrPct}% ${quality.emoji} ${quality.label} ${quality.stars}\n   Break: -${breakPct}%\n\n${biasEmoji()} ${biasNote}\n\n🎯 T1:$${tgt1} T2:$${tgt2}\n🛑 Stop:$${stop}\n\n<i>ORB 10-min via Alpaca SIP</i>` + scoreLine);
+        pushAlert({type:'orb',ticker,direction:'bear',price:completedBar.c.toFixed(2),orbQuality:quality.label,orbAtrPct:atrPct,rvol:avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A',rsi,target:tgt1,stop,conviction:quality.label==='ELITE'?5:4,patternScore:rating?rating.score:null,patternConfidence:rating?rating.confidence:null});
         log(`🔻 ORB BEAR: ${ticker} -${breakPct}%`);
         setTimeout(()=>orbAlerted.delete(ticker),15*60*1000);
       }
     }
   };
 
-  ensureLiveConnection(ORB_TICKERS);
-  
+  ensureLiveConnection(orbUniverse);
+
 }
 
 function stopOrb() {
   orbActive=false; orbBriefSent=false; barHandlers.orb=null;
   orbData={}; orbBars5m={}; orbAlerted.clear();
   log('ORB stopped');
-  
+
   cleanupLiveConnection();
 }
 
@@ -853,8 +963,9 @@ setInterval(async()=>{
   if (isWeekday()&&etMins>=480&&etMins<960) await updateMarketBias();
 },30*60*1000);
 
-log('WickED starting - Scalp + Reversal + ORB + API + Alpaca Live');
+log('WickED starting - Scalp + Reversal + ORB + API + Alpaca Live + Sector');
 updateMarketBias();
 premarketScanner.schedulePremarketScan();
+sectorScanner.start();   // 8am ET brief + 30-min refresh; populates leaders
 tick();
 setInterval(tick, 60*1000);
