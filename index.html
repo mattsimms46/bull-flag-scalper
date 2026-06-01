@@ -1628,7 +1628,7 @@ function copyTicker(ticker, e) {
 // ── Config ────────────────────────────────────────────────────────────────────
 const RAILWAY_URL = "https://steep-morning-ce86.mattsimms46.workers.dev";
 const API_URL     = "https://bull-flag-scalper-production.up.railway.app";
-const API_SECRET  = "Fitasafiddle46!"; // change this in Railway env vars
+const API_SECRET  = "wicked-secret-change-me"; // change this in Railway env vars
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let alerts         = [];
@@ -1667,7 +1667,18 @@ async function pullData() {
     clearTimeout(timer);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    alerts         = data.alerts  || [];
+    // Merge alerts - keep local outcome/notes, add new ones from server
+    const serverAlerts = data.alerts || [];
+    const localById = new Map(alerts.map(a => [a.id, a]));
+    for (const sa of serverAlerts) {
+      if (localById.has(sa.id)) {
+        // Preserve local outcome/notes if set
+        const local = localById.get(sa.id);
+        if (local.outcome) sa.outcome = local.outcome;
+        if (local.notes)   sa.notes   = local.notes;
+      }
+    }
+    alerts         = serverAlerts;
     journal        = data.journal || [];
     wheelPositions = data.wheel   || [];
     bnhPositions   = data.bnh     || [];
@@ -3001,9 +3012,7 @@ setInterval(updateClock, 1000);
 fetchMarketBias();
 setInterval(fetchMarketBias, 5*60*1000);
 updateAllocations();
-pullData().then(() => {
-  if (!alerts.length) addDemoAlerts();
-});
+pullData();
 setInterval(pullData, 30*1000);
 fetchBnHPrices();
 setInterval(fetchBnHPrices, 10*60*1000);
