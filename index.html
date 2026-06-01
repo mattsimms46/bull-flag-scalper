@@ -1743,7 +1743,33 @@ async function pullData() {
         if (local.notes)   sa.notes   = local.notes;
       }
     }
-    alerts         = serverAlerts;
+    // MERGE strategy: localStorage is the source of truth for persistence
+    // Server provides NEW alerts only — never wipes existing ones
+    let stored = [];
+    try { stored = JSON.parse(localStorage.getItem("wicked_alerts_backup") || "[]"); } catch(e){}
+    
+    // Add any new server alerts not already in stored
+    const storedIds = new Set(stored.map(a => a.id));
+    const newFromServer = serverAlerts.filter(a => !storedIds.has(a.id));
+    
+    // Update outcomes on existing stored alerts from server
+    const serverById = new Map(serverAlerts.map(a => [a.id, a]));
+    for (const a of stored) {
+      const srv = serverById.get(a.id);
+      if (srv && srv.outcome && !a.outcome) { a.outcome = srv.outcome; a.notes = srv.notes; }
+    }
+    
+    // Final list: stored (with updated outcomes) + new from server
+    alerts = [...newFromServer, ...stored];
+    
+    // Filter to today + yesterday only to keep it manageable
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 1);
+    cutoff.setHours(0,0,0,0);
+    alerts = alerts.filter(a => new Date(a.time) >= cutoff);
+    
+    // Save back to localStorage
+    try { localStorage.setItem("wicked_alerts_backup", JSON.stringify(alerts)); } catch(e){}
     journal        = data.journal || [];
     wheelPositions = data.wheel   || [];
     bnhPositions   = data.bnh     || [];
@@ -1754,8 +1780,9 @@ async function pullData() {
   } catch(e) {
     console.warn("Pull failed, using localStorage fallback:", e.message);
     setSyncStatus("error");
-    // Fallback to localStorage
-    alerts         = JSON.parse(localStorage.getItem("wicked_alerts")  || "[]");
+    // Fallback: try backup first, then original localStorage
+    const backup = localStorage.getItem("wicked_alerts_backup");
+    alerts         = JSON.parse(backup || localStorage.getItem("wicked_alerts") || "[]");
     journal        = JSON.parse(localStorage.getItem("wicked_journal") || "[]");
     wheelPositions = JSON.parse(localStorage.getItem("wicked_wheel")   || "[]");
     bnhPositions   = JSON.parse(localStorage.getItem("wicked_bnh")     || "[]");
@@ -3243,6 +3270,18 @@ setInterval(updateClock, 1000);
 fetchMarketBias();
 setInterval(fetchMarketBias, 5*60*1000);
 updateAllocations();
+// Load localStorage backup immediately so cards show before first sync
+try {
+  const backup = localStorage.getItem("wicked_alerts_backup");
+  if (backup) {
+    const parsed = JSON.parse(backup);
+    if (parsed.length) {
+      alerts = parsed;
+      renderAll();
+      console.log(`Restored ${parsed.length} alerts from local backup`);
+    }
+  }
+} catch(e) {}
 pullData();
 setInterval(pullData, 30*1000);
 fetchBnHPrices();
