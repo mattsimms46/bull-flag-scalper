@@ -709,14 +709,24 @@ async function startOrb() {
       const orb=orbData[ticker]; if(!orb?.locked) return;
       if (orbAlerted.has(ticker)) return;
       const avgVol=orbAvgBarVol[ticker]||0;
-      if (avgVol>0&&completedBar.v<avgVol*2) return;
+      if (avgVol>0&&completedBar.v<avgVol*2) {
+        log(`ORB ${ticker}: low vol ${completedBar.v} vs ${(avgVol*2).toFixed(0)} needed`);
+        return;
+      }
       const quality=orb.quality||orbQuality(orb.orbPct||0.5);
-      if (quality.label==='SKIP'||quality.label==='OK') return;
+      if (quality.label==='SKIP'||quality.label==='OK') {
+        log(`ORB ${ticker}: quality ${quality.label} (${orb.orbPct?(orb.orbPct*100).toFixed(0)+'%':'N/A'} of ATR) - filtered`);
+        return;
+      }
       const rsi=calcRSI((orbBars5m[ticker]||[]).slice(-15));
       const prev=orbPrevDay[ticker]||{};
       const atrPct=orb.orbPct?(orb.orbPct*100).toFixed(0):'N/A';
 
-      if (completedBar.c>orb.high) {
+      // Alert only on confirmed 5-min close strictly outside OR
+      const closeAbove = completedBar.c > orb.high;
+      const closeBelow = completedBar.c < orb.low;
+      if (closeAbove || closeBelow) log(`ORB ${ticker}: 5-min close $${completedBar.c.toFixed(2)} vs H:$${orb.high.toFixed(2)} L:$${orb.low.toFixed(2)} - breakout confirmed`);
+      if (closeAbove) {
         orbAlerted.add(ticker);
         const breakPct=((completedBar.c-orb.high)/orb.high*100).toFixed(2);
         const tgt1=(orb.high+orb.orbRange).toFixed(2), tgt2=(orb.high+orb.orbRange*2).toFixed(2), stop=(orb.high*0.995).toFixed(2);
@@ -725,7 +735,7 @@ async function startOrb() {
         pushAlert({type:'orb',ticker,direction:'bull',price:completedBar.c.toFixed(2),orbQuality:quality.label,orbAtrPct:atrPct,rvol:avgVol>0?(completedBar.v/avgVol).toFixed(1):'N/A',rsi,target:tgt1,stop,conviction:quality.label==='ELITE'?5:4});
         log(`🚀 ORB BULL: ${ticker} +${breakPct}%`);
         setTimeout(()=>orbAlerted.delete(ticker),15*60*1000);
-      } else if (completedBar.c<orb.low) {
+      } else if (closeBelow) {
         orbAlerted.add(ticker);
         const breakPct=((orb.low-completedBar.c)/orb.low*100).toFixed(2);
         const tgt1=(orb.low-orb.orbRange).toFixed(2), tgt2=(orb.low-orb.orbRange*2).toFixed(2), stop=(orb.low*1.005).toFixed(2);
